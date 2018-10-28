@@ -11,8 +11,9 @@ from constant_sorrow import constants
 from eth_utils import to_canonical_address, to_checksum_address
 from typing import Generator, List, Set
 from umbral.config import default_params
-from umbral.fragments import KFrag
+from umbral.fragments import KFrag, CapsuleFrag
 from umbral.pre import Capsule
+from umbral.point import Point
 
 from nucypher.characters.lawful import Alice
 from nucypher.characters.lawful import Bob, Ursula, Character
@@ -573,10 +574,57 @@ class WorkOrderHistory:
     def ursulas(self):
         return self.by_ursula.keys()
 
-    def by_capsule(self, capsule):
+    def by_capsule(self, capsule: Capsule):
         ursulas_by_capsules = {}  # type: dict
         for ursula, capsules in self.by_ursula.items():
             for saved_capsule, work_order in capsules.items():
                 if saved_capsule == capsule:
                     ursulas_by_capsules[ursula] = work_order
         return ursulas_by_capsules
+
+
+class UnquestionableEvidence:
+
+    def __init__(self, capsule: Capsule, cfrag: CapsuleFrag) -> None:
+        self.capsule = capsule
+        self.cfrag = cfrag
+
+    def precompute_values(self) -> bytes:
+
+        point_e, point_v, _ = self.capsule.components()
+
+        # TODO: Change this with new umbral release
+        point_e1 = self.cfrag._point_e1
+        point_v1 = self.cfrag._point_v1
+        point_e2 = self.cfrag.proof._point_e2
+        point_v2 = self.cfrag.proof._point_v2
+        point_u1 = self.cfrag.proof._point_kfrag_commitment
+        point_u2 = self.cfrag.proof._point_kfrag_pok
+
+        z = self.cfrag.proof.bn_sig
+        point_ez = z * point_e
+        point_vz = z * point_v
+        point_uz = z * default_params().u
+
+        def raw_bytes_from_point(point: Point, only_y_coord=False) -> bytes:
+            if only_y_coord:
+                y_coord_start = 1 + Point.expected_bytes_length(is_compressed=False) / 2
+                return point.to_bytes(is_compressed=False)[y_coord_start:]
+            else:
+                return point.to_bytes()[1:]
+
+        e_y = raw_bytes_from_point(point_e, only_y_coord=True)
+        ez_xy = raw_bytes_from_point(point_ez)
+        e1_y = raw_bytes_from_point(point_e1, only_y_coord=True)
+        e1h_xy = None
+        e2_y = raw_bytes_from_point(point_e2, only_y_coord=True)
+        v_y = raw_bytes_from_point(point_v, only_y_coord=True)
+        vz_xy = raw_bytes_from_point(point_vz)
+        v1_y = raw_bytes_from_point(point_v1, only_y_coord=True)
+        v1h_xy = None
+        v2_y = raw_bytes_from_point(point_v2, only_y_coord=True)
+
+        pieces = (
+            e_y, ez_xy, e1_y, e1h_xy, e2_y, v_y, vz_xy, v1_y, v1h_xy, v2_y
+        )
+        return b''.join(pieces)
