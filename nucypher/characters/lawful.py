@@ -16,6 +16,7 @@ from eth_utils import to_checksum_address
 from twisted.internet import threads
 from umbral.keys import UmbralPublicKey
 from umbral.signing import Signature
+from umbral.pre import UmbralCorrectnessError
 
 from nucypher.blockchain.eth.actors import PolicyAuthor, Miner
 from nucypher.blockchain.eth.agents import MinerAgent
@@ -29,6 +30,7 @@ from nucypher.network.middleware import RestMiddleware
 from nucypher.network.nodes import VerifiableNode
 from nucypher.network.protocols import InterfaceInfo
 from nucypher.network.server import ProxyRESTServer, TLSHostingPower, ProxyRESTRoutes
+from nucypher.policy.models import UnquestionableEvidence
 
 
 class Alice(Character, PolicyAuthor):
@@ -338,7 +340,8 @@ class Bob(Character):
 
     def retrieve(self, message_kit, data_source, alice_verifying_key):
 
-        message_kit.capsule.set_correctness_keys(
+        capsule = message_kit.capsule  # TODO: generalize for WorkOrders with more than one capsule
+        capsule.set_correctness_keys(
             delegating=data_source.policy_pubkey,
             receiving=self.public_keys(EncryptingPower),
             verifying=alice_verifying_key)
@@ -346,13 +349,20 @@ class Bob(Character):
         hrac, map_id = self.construct_hrac_and_map_id(alice_verifying_key, data_source.label)
         self.follow_treasure_map(map_id=map_id, block=True)
 
-        work_orders = self.generate_work_orders(map_id, message_kit.capsule)
+        work_orders = self.generate_work_orders(map_id, capsule)
 
         cleartexts = []
-
         for work_order in work_orders.values():
             cfrags = self.get_reencrypted_cfrags(work_order)
-            message_kit.capsule.attach_cfrag(cfrags[0])
+            cfrag = cfrags[0]   # TODO: generalize for WorkOrders with more than one capsule
+            try:
+                message_kit.capsule.attach_cfrag(cfrag)
+            except UmbralCorrectnessError:
+                evidence = self.collect_evidence(capsule=capsule,
+                                                 cfrag=cfrag,
+                                                 )
+                # TODO: Here's the evidence of Ursula misbehavior. Now what? #500
+                raise
 
         delivered_cleartext = self.verify_from(data_source,
                                                message_kit,
@@ -361,6 +371,9 @@ class Bob(Character):
 
         cleartexts.append(delivered_cleartext)
         return cleartexts
+
+    def collect_evidence(self, capsule, cfrag):
+        return UnquestionableEvidence(capsule, cfrag)
 
 
 class Ursula(Character, VerifiableNode, Miner):
