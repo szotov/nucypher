@@ -97,7 +97,7 @@ class EthereumContractAgent:
 
         if contract is None:  # Fetch the contract
             contract = self.blockchain.get_contract_by_name(registry=self.registry,
-                                                            name=self.registry_contract_name,
+                                                            contract_name=self.registry_contract_name,
                                                             proxy_name=self._proxy_name,
                                                             use_proxy_address=self._forward_address)
         self.__contract = contract
@@ -417,7 +417,7 @@ class StakingEscrowAgent(EthereumContractAgent):
     @validate_checksum_address
     def is_restaking(self, staker_address: str) -> bool:
         staker_info = self.get_staker_info(staker_address)
-        restake_flag = bool(staker_info[3])  # TODO: #1348 Use constant or enum
+        restake_flag = not bool(staker_info[3])  # TODO: #1348 Use constant or enum
         return restake_flag
 
     @validate_checksum_address
@@ -449,6 +449,24 @@ class StakingEscrowAgent(EthereumContractAgent):
         staker_info = self.get_staker_info(staker_address)
         restake_unlock_period = int(staker_info[4])  # TODO: #1348 Use constant or enum
         return restake_unlock_period
+
+    @validate_checksum_address
+    def is_winding_down(self, staker_address: str) -> bool:
+        staker_info = self.get_staker_info(staker_address)
+        winddown_flag = bool(staker_info[10])  # TODO: #1348 Use constant or enum
+        return winddown_flag
+
+    @validate_checksum_address
+    def set_winding_down(self, staker_address: str, value: bool) -> dict:
+        """
+        Enable wind down for stake.
+        If set to True, then stakes duration will be decreasing in each period with `confirmActivity()`.
+        """
+        contract_function = self.contract.functions.setWindDown(value)
+        receipt = self.blockchain.send_transaction(contract_function=contract_function,
+                                                   sender_address=staker_address)
+        # TODO: Handle WindDownSet event (see #1193)
+        return receipt
 
     def staking_parameters(self) -> Tuple:
         parameter_signatures = (
@@ -564,12 +582,16 @@ class PolicyManagerAgent(EthereumContractAgent):
                       policy_id: str,
                       author_address: str,
                       value: int,
-                      periods: int,
-                      first_period_reward: int,
-                      node_addresses: List[str]):
+                      end_timestamp: int,
+                      node_addresses: List[str],
+                      owner_address: str = None):
 
+        owner_address = owner_address or author_address
         payload = {'value': value}
-        contract_function = self.contract.functions.createPolicy(policy_id, periods, first_period_reward, node_addresses)
+        contract_function = self.contract.functions.createPolicy(policy_id,
+                                                                 owner_address,
+                                                                 end_timestamp,
+                                                                 node_addresses)
         receipt = self.blockchain.send_transaction(contract_function=contract_function,
                                                    payload=payload,
                                                    sender_address=author_address)
@@ -804,6 +826,17 @@ class PreallocationEscrowAgent(EthereumContractAgent):
         receipt = self.blockchain.send_transaction(contract_function=contract_function,
                                                    sender_address=self.__beneficiary)
         # TODO: Handle ReStakeLocked event (see #1193)
+        return receipt
+
+    def set_winding_down(self, value: bool) -> dict:
+        """
+                Enable wind down for stake.
+                If set to True, then stakes duration will be decreasing in each period with `confirmActivity()`.
+                """
+        contract_function = self.__interface_agent.functions.setWindDown(value)
+        receipt = self.blockchain.send_transaction(contract_function=contract_function,
+                                                   sender_address=self.__beneficiary)
+        # TODO: Handle WindDownSet event (see #1193)
         return receipt
 
 

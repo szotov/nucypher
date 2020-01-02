@@ -136,6 +136,10 @@ def test_deposit_and_withdraw_as_staker(testerchain, agent, agency, allocation_v
     worker = testerchain.ursula_account(0)
     _receipt = agent.set_worker(worker_address=worker)
 
+    # Owner enables winding down
+    receipt = agent.set_winding_down(value=True)
+    assert receipt['status'] == 1, "Transaction Rejected"
+
     assert token_agent.get_balance(address=agent.contract_address) == allocation_value - token_economics.minimum_allowed_locked
     assert agent.unvested_tokens == allocation_value
     assert staking_agent.get_locked_tokens(staker_address=agent.contract_address) == 0
@@ -185,11 +189,12 @@ def test_collect_policy_reward(testerchain, agent, agency, token_economics, mock
     testerchain.time_travel(periods=1)
 
     mock_transacting_power_activation(account=author, password=INSECURE_DEVELOPMENT_PASSWORD)
-    _receipt = policy_agent.create_policy(policy_id=os.urandom(16),
+    now = testerchain.w3.eth.getBlock(block_identifier='latest').timestamp
+    policy_id = os.urandom(16)
+    _receipt = policy_agent.create_policy(policy_id=policy_id,
                                           author_address=author,
                                           value=to_wei(1, 'ether'),
-                                          periods=2,
-                                          first_period_reward=0,
+                                          end_timestamp=now + token_economics.hours_per_period * 60 * 60,
                                           node_addresses=[agent.contract_address])
 
     mock_transacting_power_activation(account=worker, password=INSECURE_DEVELOPMENT_PASSWORD)

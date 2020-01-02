@@ -24,8 +24,9 @@ from web3.contract import Contract
 from nucypher.blockchain.eth.interfaces import BlockchainInterface
 from nucypher.blockchain.eth.token import NU
 
-RE_STAKE_FIELD = 3
+DISABLE_RE_STAKE_FIELD = 3
 LOCK_RE_STAKE_UNTIL_PERIOD_FIELD = 4
+WIND_DOWN_FIELD = 10
 
 secret = (123456).to_bytes(32, byteorder='big')
 secret2 = (654321).to_bytes(32, byteorder='big')
@@ -42,7 +43,7 @@ def test_upgrading(testerchain, token, token_economics, deploy_contract):
 
     # Deploy contract
     contract_library_v1, _ = deploy_contract(
-        'StakingEscrow', token.address, *token_economics.staking_deployment_parameters
+        'StakingEscrow', token.address, *token_economics.staking_deployment_parameters, True
     )
     dispatcher, _ = deploy_contract('Dispatcher', contract_library_v1.address, secret_hash)
 
@@ -58,6 +59,7 @@ def test_upgrading(testerchain, token, token_economics, deploy_contract):
         _minAllowableLockedTokens=2,
         _maxAllowableLockedTokens=2,
         _minWorkerPeriods=2,
+        _isTestContract=False,
         _valueToCheck=2
     )
 
@@ -66,6 +68,7 @@ def test_upgrading(testerchain, token, token_economics, deploy_contract):
         address=dispatcher.address,
         ContractFactoryClass=Contract)
     assert token_economics.maximum_allowed_locked == contract.functions.maxAllowableLockedTokens().call()
+    assert contract.functions.isTestContract().call()
 
     # Can't call `finishUpgrade` and `verifyState` methods outside upgrade lifecycle
     with pytest.raises((TransactionFailed, ValueError)):
@@ -94,9 +97,9 @@ def test_upgrading(testerchain, token, token_economics, deploy_contract):
     tx = contract.functions.setWorkLock(worklock.address).transact()
     testerchain.wait_for_receipt(tx)
 
-    tx = token.functions.transfer(contract.address, token_economics.erc20_reward_supply).transact({'from': creator})
+    tx = token.functions.approve(contract.address, token_economics.erc20_reward_supply).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
-    tx = contract.functions.initialize().transact({'from': creator})
+    tx = contract.functions.initialize(token_economics.erc20_reward_supply).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
     tx = token.functions.transfer(staker, 1000).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
@@ -119,6 +122,10 @@ def test_upgrading(testerchain, token, token_economics, deploy_contract):
     tx = contract.functions.confirmActivity().transact({'from': worker})
     testerchain.wait_for_receipt(tx)
 
+    # Can set WorkLock twice, because isTestContract == True
+    tx = contract.functions.setWorkLock(worklock.address).transact()
+    testerchain.wait_for_receipt(tx)
+
     # Upgrade to the second version
     tx = dispatcher.functions.upgrade(contract_library_v2.address, secret, secret2_hash).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
@@ -127,6 +134,10 @@ def test_upgrading(testerchain, token, token_economics, deploy_contract):
     assert token_economics.maximum_allowed_locked == contract.functions.maxAllowableLockedTokens().call()
     assert policy_manager.address == contract.functions.policyManager().call()
     assert 2 == contract.functions.valueToCheck().call()
+    assert not contract.functions.isTestContract().call()
+    with pytest.raises((TransactionFailed, ValueError)):
+        tx = contract.functions.setWorkLock(worklock.address).transact()
+        testerchain.wait_for_receipt(tx)
     # Check new ABI
     tx = contract.functions.setValueToCheck(3).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
@@ -143,7 +154,8 @@ def test_upgrading(testerchain, token, token_economics, deploy_contract):
         _minLockedPeriods=2,
         _minAllowableLockedTokens=2,
         _maxAllowableLockedTokens=2,
-        _minWorkerPeriods=2
+        _minWorkerPeriods=2,
+        _isTestContract=False
     )
     with pytest.raises((TransactionFailed, ValueError)):
         tx = dispatcher.functions.upgrade(contract_library_v1.address, secret2, secret_hash)\
@@ -159,6 +171,9 @@ def test_upgrading(testerchain, token, token_economics, deploy_contract):
     testerchain.wait_for_receipt(tx)
     assert contract_library_v1.address == dispatcher.functions.target().call()
     assert policy_manager.address == contract.functions.policyManager().call()
+    assert contract.functions.isTestContract().call()
+    tx = contract.functions.setWorkLock(worklock.address).transact()
+    testerchain.wait_for_receipt(tx)
     # After rollback new ABI is unavailable
     with pytest.raises((TransactionFailed, ValueError)):
         tx = contract.functions.setValueToCheck(2).transact({'from': creator})
@@ -207,32 +222,36 @@ def test_re_stake(testerchain, token, escrow_contract):
     re_stake_lock_log = escrow.events.ReStakeLocked.createFilter(fromBlock='latest')
 
     # Give Escrow tokens for reward and initialize contract
-    tx = token.functions.transfer(escrow.address, 10 ** 9).transact({'from': creator})
+    reward = 10 ** 9
+    tx = token.functions.approve(escrow.address, reward).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
-    tx = escrow.functions.initialize().transact({'from': creator})
+    tx = escrow.functions.initialize(reward).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
 
     # Set re-stake parameter even before initialization
-    assert not escrow.functions.stakerInfo(ursula).call()[RE_STAKE_FIELD]
+    assert not escrow.functions.stakerInfo(ursula).call()[DISABLE_RE_STAKE_FIELD]
     tx = escrow.functions.setReStake(False).transact({'from': ursula})
     testerchain.wait_for_receipt(tx)
-    assert not escrow.functions.stakerInfo(ursula).call()[RE_STAKE_FIELD]
+    assert escrow.functions.stakerInfo(ursula).call()[DISABLE_RE_STAKE_FIELD]
     tx = escrow.functions.setReStake(True).transact({'from': ursula})
     testerchain.wait_for_receipt(tx)
-    assert escrow.functions.stakerInfo(ursula).call()[RE_STAKE_FIELD]
+    assert not escrow.functions.stakerInfo(ursula).call()[DISABLE_RE_STAKE_FIELD]
     tx = escrow.functions.setReStake(True).transact({'from': ursula})
     testerchain.wait_for_receipt(tx)
-    assert escrow.functions.stakerInfo(ursula).call()[RE_STAKE_FIELD]
+    assert not escrow.functions.stakerInfo(ursula).call()[DISABLE_RE_STAKE_FIELD]
     tx = escrow.functions.setReStake(False).transact({'from': ursula})
     testerchain.wait_for_receipt(tx)
-    assert not escrow.functions.stakerInfo(ursula).call()[RE_STAKE_FIELD]
+    assert escrow.functions.stakerInfo(ursula).call()[DISABLE_RE_STAKE_FIELD]
 
     events = re_stake_log.get_all_entries()
-    assert 2 == len(events)
+    assert 3 == len(events)
     event_args = events[0]['args']
     assert ursula == event_args['staker']
-    assert event_args['reStake']
+    assert not event_args['reStake']
     event_args = events[1]['args']
+    assert ursula == event_args['staker']
+    assert event_args['reStake']
+    event_args = events[2]['args']
     assert ursula == event_args['staker']
     assert not event_args['reStake']
 
@@ -296,7 +315,7 @@ def test_re_stake(testerchain, token, escrow_contract):
     # Set re-stake and lock parameter
     tx = escrow.functions.setReStake(True).transact({'from': ursula})
     testerchain.wait_for_receipt(tx)
-    assert escrow.functions.stakerInfo(ursula).call()[RE_STAKE_FIELD]
+    assert not escrow.functions.stakerInfo(ursula).call()[DISABLE_RE_STAKE_FIELD]
     tx = escrow.functions.lockReStake(period + 6).transact({'from': ursula})
     testerchain.wait_for_receipt(tx)
     # Can't set re-stake parameter during 6 periods
@@ -305,8 +324,8 @@ def test_re_stake(testerchain, token, escrow_contract):
         testerchain.wait_for_receipt(tx)
 
     events = re_stake_log.get_all_entries()
-    assert 3 == len(events)
-    event_args = events[2]['args']
+    assert 4 == len(events)
+    event_args = events[3]['args']
     assert ursula == event_args['staker']
     assert event_args['reStake']
     events = re_stake_lock_log.get_all_entries()
@@ -369,6 +388,8 @@ def test_re_stake(testerchain, token, escrow_contract):
     tx = escrow.functions.deposit(stake, sub_stake_duration).transact({'from': ursula2})
     testerchain.wait_for_receipt(tx)
     tx = escrow.functions.setWorker(ursula2).transact({'from': ursula2})
+    testerchain.wait_for_receipt(tx)
+    tx = escrow.functions.setReStake(False).transact({'from': ursula2})
     testerchain.wait_for_receipt(tx)
     tx = escrow.functions.confirmActivity().transact({'from': ursula2})
     testerchain.wait_for_receipt(tx)
@@ -435,11 +456,11 @@ def test_re_stake(testerchain, token, escrow_contract):
     # Now turn off re-stake
     tx = escrow.functions.setReStake(False).transact({'from': ursula})
     testerchain.wait_for_receipt(tx)
-    assert not escrow.functions.stakerInfo(ursula).call()[RE_STAKE_FIELD]
+    assert escrow.functions.stakerInfo(ursula).call()[DISABLE_RE_STAKE_FIELD]
 
     events = re_stake_log.get_all_entries()
-    assert 4 == len(events)
-    event_args = events[3]['args']
+    assert 6 == len(events)
+    event_args = events[5]['args']
     assert ursula == event_args['staker']
     assert not event_args['reStake']
 
@@ -469,7 +490,7 @@ def test_worker(testerchain, token, escrow_contract, deploy_contract):
     worker_log = escrow.events.WorkerSet.createFilter(fromBlock='latest')
 
     # Initialize escrow contract
-    tx = escrow.functions.initialize().transact({'from': creator})
+    tx = escrow.functions.initialize(0).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
 
     # Deploy intermediary contracts
@@ -710,9 +731,10 @@ def test_measure_work(testerchain, token, escrow_contract, deploy_contract):
     work_measurement_log = escrow.events.WorkMeasurementSet.createFilter(fromBlock='latest')
 
     # Initialize escrow contract
-    tx = token.functions.transfer(escrow.address, int(NU(10 ** 9, 'NuNit'))).transact({'from': creator})
+    reward = 10 ** 9
+    tx = token.functions.approve(escrow.address, int(NU(reward, 'NuNit'))).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
-    tx = escrow.functions.initialize().transact({'from': creator})
+    tx = escrow.functions.initialize(reward).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
 
     # Deploy WorkLock mock
@@ -795,3 +817,126 @@ def test_measure_work(testerchain, token, escrow_contract, deploy_contract):
     assert reward > 0
     assert escrow.functions.getCompletedWork(ursula).call() == work_done
 
+
+@pytest.mark.slow
+def test_wind_down(testerchain, token, escrow_contract, token_economics):
+    escrow = escrow_contract(token_economics.maximum_allowed_locked)
+    creator = testerchain.client.accounts[0]
+    staker = testerchain.client.accounts[1]
+
+    wind_down_log = escrow.events.WindDownSet.createFilter(fromBlock='latest')
+
+    # Give Escrow tokens for reward and initialize contract
+    tx = token.functions.approve(escrow.address, token_economics.reward_supply).transact({'from': creator})
+    testerchain.wait_for_receipt(tx)
+    tx = escrow.functions.initialize(token_economics.reward_supply).transact({'from': creator})
+    testerchain.wait_for_receipt(tx)
+
+    # Only staker can set wind-down parameter
+    with pytest.raises((TransactionFailed, ValueError)):
+        tx = escrow.functions.setWindDown(False).transact({'from': staker})
+        testerchain.wait_for_receipt(tx)
+    with pytest.raises((TransactionFailed, ValueError)):
+        tx = escrow.functions.setWindDown(True).transact({'from': staker})
+        testerchain.wait_for_receipt(tx)
+
+    # Staker deposits some tokens and confirms activity
+    sub_stake = token_economics.minimum_allowed_locked
+    duration = 10
+    tx = token.functions.transfer(staker, sub_stake).transact({'from': creator})
+    testerchain.wait_for_receipt(tx)
+    tx = token.functions.approve(escrow.address, sub_stake).transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    tx = escrow.functions.deposit(sub_stake, duration).transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    tx = escrow.functions.setWorker(staker).transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    tx = escrow.functions.setReStake(False).transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert 0 == escrow.functions.getLockedTokens(staker, 0).call()
+    assert sub_stake == escrow.functions.getLockedTokens(staker, 1).call()
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration + 1).call()
+
+    # Wind down is false by default, after one period duration will be the same
+    tx = escrow.functions.confirmActivity().transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration + 1).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration + 2).call()
+    testerchain.time_travel(hours=1)
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration + 1).call()
+
+    tx = escrow.functions.confirmActivity().transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+
+    # Set wind-down parameter
+    assert not escrow.functions.stakerInfo(staker).call()[WIND_DOWN_FIELD]
+    tx = escrow.functions.setWindDown(False).transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert not escrow.functions.stakerInfo(staker).call()[WIND_DOWN_FIELD]
+    tx = escrow.functions.setWindDown(True).transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert escrow.functions.stakerInfo(staker).call()[WIND_DOWN_FIELD]
+    tx = escrow.functions.setWindDown(True).transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert escrow.functions.stakerInfo(staker).call()[WIND_DOWN_FIELD]
+
+    events = wind_down_log.get_all_entries()
+    assert 1 == len(events)
+    event_args = events[0]['args']
+    assert staker == event_args['staker']
+    assert event_args['windDown']
+
+    # Enabling wind-down will affect duration only after next confirm activity
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration + 1).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration + 2).call()
+    testerchain.time_travel(hours=1)
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration + 1).call()
+    tx = escrow.functions.confirmActivity().transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration + 1).call()
+    testerchain.time_travel(hours=1)
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration - 1).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration).call()
+
+    # Turn off wind-down and confirm activity, duration will be the same
+    assert escrow.functions.stakerInfo(staker).call()[WIND_DOWN_FIELD]
+    tx = escrow.functions.setWindDown(False).transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert not escrow.functions.stakerInfo(staker).call()[WIND_DOWN_FIELD]
+
+    events = wind_down_log.get_all_entries()
+    assert 2 == len(events)
+    event_args = events[1]['args']
+    assert staker == event_args['staker']
+    assert not event_args['windDown']
+
+    tx = escrow.functions.confirmActivity().transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration + 1).call()
+    testerchain.time_travel(hours=1)
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration - 1).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration).call()
+
+    # Turn on wind-down and confirm activity, duration will be reduced in the next period
+    tx = escrow.functions.setWindDown(True).transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert escrow.functions.stakerInfo(staker).call()[WIND_DOWN_FIELD]
+
+    events = wind_down_log.get_all_entries()
+    assert 3 == len(events)
+    event_args = events[2]['args']
+    assert staker == event_args['staker']
+    assert event_args['windDown']
+
+    tx = escrow.functions.confirmActivity().transact({'from': staker})
+    testerchain.wait_for_receipt(tx)
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration - 1).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration).call()
+    testerchain.time_travel(hours=1)
+    assert sub_stake == escrow.functions.getLockedTokens(staker, duration - 2).call()
+    assert 0 == escrow.functions.getLockedTokens(staker, duration - 1).call()

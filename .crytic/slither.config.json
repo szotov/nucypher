@@ -1,0 +1,5 @@
+{
+    "solc_remaps": "zeppelin=../nucypher/blockchain/eth/sol/source/zeppelin contracts=../nucypher/blockchain/eth/sol/source/contracts",
+	"filter_paths": "../nucypher/blockchain/eth/sol/source/zeppelin",
+    "detectors_to_exclude": "constant-function-asm,assembly,timestamp,naming-convention,reentrancy-benign,reentrancy-no-eth,low-level-calls, controlled-lowlevelcall,divide-before-multiply,constable-states,calls-loop,similar-names,incorrect-equality,unused-return,unused-state,missing-return"
+}

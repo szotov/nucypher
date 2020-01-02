@@ -32,7 +32,8 @@ from nucypher.cli.actions import (
     select_stake,
     handle_client_account_for_staking,
     confirm_enable_restaking_lock,
-    confirm_enable_restaking
+    confirm_enable_restaking,
+    confirm_enable_winding_down
 )
 from nucypher.cli.config import nucypher_click_config
 from nucypher.cli.painting import paint_receipt_summary, paint_preallocation_status
@@ -478,6 +479,63 @@ def restake(click_config,
             click.confirm(f"Confirm disable re-staking for staker {staking_address}?", abort=True)
         receipt = STAKEHOLDER.disable_restaking()
         emitter.echo(f'Successfully disabled re-staking for {staking_address}', color='green', verbosity=1)
+
+    paint_receipt_summary(receipt=receipt, emitter=emitter, chain_name=blockchain.client.chain_name)
+
+
+@stake.command()
+@_stake_options
+@click.option('--enable/--disable', help="Used to enable and disable winding down", is_flag=True, default=True)
+@click.option('--force', help="Don't ask for confirmation", is_flag=True)
+@nucypher_click_config
+def winddown(click_config,
+
+            # Stake Options
+            poa, light, registry_filepath, config_file, provider_uri, staking_address, hw_wallet,
+            beneficiary_address, allocation_filepath,
+
+            # Other
+            enable, force):
+    """
+    Manage winding down with --enable or --disable.
+    """
+
+    ### Setup ###
+    emitter = _setup_emitter(click_config)
+
+    STAKEHOLDER, blockchain = _create_stakeholder(config_file,
+                                                  provider_uri,
+                                                  poa,
+                                                  light,
+                                                  registry_filepath,
+                                                  staking_address,
+                                                  beneficiary_address=beneficiary_address,
+                                                  allocation_filepath=allocation_filepath)
+    #############
+
+    client_account, staking_address = handle_client_account_for_staking(emitter=emitter,
+                                                                        stakeholder=STAKEHOLDER,
+                                                                        staking_address=staking_address,
+                                                                        individual_allocation=STAKEHOLDER.individual_allocation,
+                                                                        force=force)
+
+    # Authenticate
+    password = None
+    if not hw_wallet and not blockchain.client.is_local:
+        password = get_client_password(checksum_address=client_account)
+    STAKEHOLDER.assimilate(checksum_address=client_account, password=password)
+
+    # Inner Exclusive Switch
+    if enable:
+        if not force:
+            confirm_enable_winding_down(emitter, staking_address=staking_address)
+        receipt = STAKEHOLDER.enable_winding_down()
+        emitter.echo(f'Successfully enabled winding down for {staking_address}', color='green', verbosity=1)
+    else:
+        if not force:
+            click.confirm(f"Confirm disable winding down for staker {staking_address}?", abort=True)
+        receipt = STAKEHOLDER.disable_winding_down()
+        emitter.echo(f'Successfully disabled winding down for {staking_address}', color='green', verbosity=1)
 
     paint_receipt_summary(receipt=receipt, emitter=emitter, chain_name=blockchain.client.chain_name)
 

@@ -261,10 +261,10 @@ def test_stake_restake(click_runner,
                        stakeholder_configuration_file_location):
 
     staker = Staker(is_me=True, checksum_address=manual_staker, registry=test_registry)
-    assert not staker.is_restaking
+    assert staker.is_restaking
 
     restake_args = ('stake', 'restake',
-                    '--enable',
+                    '--disable',
                     '--config-file', stakeholder_configuration_file_location,
                     '--staking-address', manual_staker,
                     '--force')
@@ -274,8 +274,8 @@ def test_stake_restake(click_runner,
                                  input=INSECURE_DEVELOPMENT_PASSWORD,
                                  catch_exceptions=False)
     assert result.exit_code == 0
-    assert staker.is_restaking
-    assert "Successfully enabled" in result.output
+    assert not staker.is_restaking
+    assert "Successfully disabled" in result.output
 
     staking_agent = ContractAgency.get_agent(StakingEscrowAgent, registry=test_registry)
     current_period = staking_agent.get_current_period()
@@ -292,8 +292,8 @@ def test_stake_restake(click_runner,
                                  catch_exceptions=False)
     assert result.exit_code == 0
 
-    # Still staking and the lock is enabled
-    assert staker.is_restaking
+    # Still not staking and the lock is enabled
+    assert not staker.is_restaking
     assert staker.restaking_lock_enabled
 
     # CLI Output includes success message
@@ -303,9 +303,48 @@ def test_stake_restake(click_runner,
     # Wait until release period
     testerchain.time_travel(periods=1)
     assert not staker.restaking_lock_enabled
-    assert staker.is_restaking
+    assert not staker.is_restaking
 
     disable_args = ('stake', 'restake',
+                    '--enable',
+                    '--config-file', stakeholder_configuration_file_location,
+                    '--staking-address', manual_staker,
+                    '--force')
+
+    result = click_runner.invoke(nucypher_cli,
+                                 disable_args,
+                                 input=INSECURE_DEVELOPMENT_PASSWORD,
+                                 catch_exceptions=False)
+    assert result.exit_code == 0
+    assert staker.is_restaking
+    assert "Successfully enabled" in result.output
+
+
+def test_stake_winddown(click_runner,
+                        manual_staker,
+                        custom_filepath,
+                        testerchain,
+                        test_registry,
+                        stakeholder_configuration_file_location):
+
+    staker = Staker(is_me=True, checksum_address=manual_staker, registry=test_registry)
+    assert not staker.is_winding_down
+
+    restake_args = ('stake', 'winddown',
+                    '--enable',
+                    '--config-file', stakeholder_configuration_file_location,
+                    '--staking-address', manual_staker,
+                    '--force')
+
+    result = click_runner.invoke(nucypher_cli,
+                                 restake_args,
+                                 input=INSECURE_DEVELOPMENT_PASSWORD,
+                                 catch_exceptions=False)
+    assert result.exit_code == 0
+    assert staker.is_winding_down
+    assert "Successfully enabled" in result.output
+
+    disable_args = ('stake', 'winddown',
                     '--disable',
                     '--config-file', stakeholder_configuration_file_location,
                     '--staking-address', manual_staker,
@@ -316,7 +355,7 @@ def test_stake_restake(click_runner,
                                  input=INSECURE_DEVELOPMENT_PASSWORD,
                                  catch_exceptions=False)
     assert result.exit_code == 0
-    assert not staker.is_restaking
+    assert not staker.is_winding_down
     assert "Successfully disabled" in result.output
 
 
@@ -375,7 +414,9 @@ def test_collect_rewards_integration(click_runner,
     blockchain_alice.selection_buffer = 1
 
     M, N = 1, 1
-    expiration = maya.now() + datetime.timedelta(days=3)
+    days = 3
+    now = testerchain.w3.eth.getBlock(block_identifier='latest').timestamp
+    expiration = maya.MayaDT(now).add(days=days-1)
     blockchain_policy = blockchain_alice.grant(bob=blockchain_bob,
                                                label=random_policy_label,
                                                m=M, n=N,

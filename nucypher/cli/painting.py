@@ -260,7 +260,7 @@ Registry  ................ {registry.filepath}
     from nucypher.blockchain.eth.actors import ContractAdministrator
     for contract_deployer_class in ContractAdministrator.dispatched_upgradeable_deployer_classes:
         try:
-            bare_contract = blockchain.get_contract_by_name(name=contract_deployer_class.contract_name,
+            bare_contract = blockchain.get_contract_by_name(contract_name=contract_deployer_class.contract_name,
                                                             proxy_name=DispatcherDeployer.contract_name,
                                                             registry=registry,
                                                             use_proxy_address=False)
@@ -297,7 +297,7 @@ Registry  ................ {registry.filepath}
         #
 
         staking_interface_agent = PreallocationEscrowAgent.StakingInterfaceAgent(registry=registry)
-        bare_contract = blockchain.get_contract_by_name(name=staking_interface_agent.contract_name,
+        bare_contract = blockchain.get_contract_by_name(contract_name=staking_interface_agent.contract_name,
                                                         proxy_name=StakingInterfaceRouterDeployer.contract_name,
                                                         use_proxy_address=False,
                                                         registry=registry)
@@ -569,6 +569,7 @@ def paint_stakers(emitter, stakers: List[str], staking_agent, policy_agent) -> N
         last_confirmed_period = staking_agent.get_last_active_period(staker)
         worker = staking_agent.get_worker_from_staker(staker)
         is_restaking = staking_agent.is_restaking(staker)
+        is_winding_down = staking_agent.is_winding_down(staker)
 
         missing_confirmations = current_period - last_confirmed_period
         owned_in_nu = round(NU.from_nunits(owned_tokens), 2)
@@ -583,6 +584,7 @@ def paint_stakers(emitter, stakers: List[str], staking_agent, policy_agent) -> N
                 emitter.echo(f"{tab}  {'Re-staking:':10} Yes  (Unlocked)")
         else:
             emitter.echo(f"{tab}  {'Re-staking:':10} No")
+        emitter.echo(f"{tab}  {'Winding down:':10} {'Yes' if is_winding_down else 'No'}")
         emitter.echo(f"{tab}  {'Activity:':10} ", nl=False)
         if missing_confirmations == -1:
             emitter.echo(f"Next period confirmed (#{last_confirmed_period})", color='green')

@@ -182,7 +182,8 @@ class ContractAdministrator(NucypherTokenActor):
                  registry: BaseContractRegistry,
                  deployer_address: str = None,
                  client_password: str = None,
-                 economics: TokenEconomics = None):
+                 economics: TokenEconomics = None,
+                 staking_escrow_test_mode: bool = False):
         """
         Note: super() is not called here to avoid setting the token agent.
         TODO: Review this logic ^^ "bare mode".  #1510
@@ -199,6 +200,7 @@ class ContractAdministrator(NucypherTokenActor):
 
         self.transacting_power = TransactingPower(password=client_password, account=deployer_address, cache=True)
         self.transacting_power.activate()
+        self.staking_escrow_test_mode = staking_escrow_test_mode
 
     def __repr__(self):
         r = '{name} - {deployer_address})'.format(name=self.__class__.__name__, deployer_address=self.deployer_address)
@@ -229,11 +231,15 @@ class ContractAdministrator(NucypherTokenActor):
                         gas_limit: int = None,
                         plaintext_secret: str = None,
                         bare: bool = False,
+                        ignore_deployed: bool = False,
                         progress=None,
                         *args, **kwargs,
                         ) -> Tuple[dict, BaseContractDeployer]:
 
         Deployer = self.__get_deployer(contract_name=contract_name)
+        if Deployer is StakingEscrowDeployer:
+            kwargs.update({"test_mode": self.staking_escrow_test_mode})
+
         deployer = Deployer(registry=self.registry,
                             deployer_address=self.deployer_address,
                             economics=self.economics,
@@ -250,17 +256,24 @@ class ContractAdministrator(NucypherTokenActor):
             receipts = deployer.deploy(secret_hash=secret_hash,
                                        gas_limit=gas_limit,
                                        initial_deployment=is_initial_deployment,
-                                       progress=progress)
+                                       progress=progress,
+                                       ignore_deployed=ignore_deployed)
         else:
             receipts = deployer.deploy(gas_limit=gas_limit, progress=progress)
         return receipts, deployer
 
-    def upgrade_contract(self, contract_name: str, existing_plaintext_secret: str, new_plaintext_secret: str) -> dict:
+    def upgrade_contract(self,
+                         contract_name: str,
+                         existing_plaintext_secret: str,
+                         new_plaintext_secret: str,
+                         ignore_deployed: bool = False
+                         ) -> dict:
         Deployer = self.__get_deployer(contract_name=contract_name)
         deployer = Deployer(registry=self.registry, deployer_address=self.deployer_address)
         new_secret_hash = keccak(bytes(new_plaintext_secret, encoding='utf-8'))
         receipts = deployer.upgrade(existing_secret_plaintext=bytes(existing_plaintext_secret, encoding='utf-8'),
-                                    new_secret_hash=new_secret_hash)
+                                    new_secret_hash=new_secret_hash,
+                                    ignore_deployed=ignore_deployed)
         return receipts
 
     def retarget_proxy(self, contract_name: str, target_address: str, existing_plaintext_secret: str, new_plaintext_secret: str):
@@ -293,13 +306,15 @@ class ContractAdministrator(NucypherTokenActor):
                                  secrets: dict,
                                  interactive: bool = True,
                                  emitter: StdoutEmitter = None,
-                                 etherscan: bool = False) -> dict:
+                                 etherscan: bool = False,
+                                 ignore_deployed: bool = False) -> dict:
         """
 
         :param secrets: Contract upgrade secrets dictionary
         :param interactive: If True, wait for keypress after each contract deployment
         :param emitter: A console output emitter instance. If emitter is None, no output will be echoed to the console.
         :param etherscan: Open deployed contracts in Etherscan
+        :param ignore_deployed: Ignore already deployed contracts if exist
         :return: Returns a dictionary of deployment receipts keyed by contract name
         """
 
@@ -336,7 +351,8 @@ class ContractAdministrator(NucypherTokenActor):
                     receipts, deployer = self.deploy_contract(contract_name=deployer_class.contract_name,
                                                               plaintext_secret=secrets[deployer_class.contract_name],
                                                               gas_limit=gas_limit,
-                                                              progress=bar)
+                                                              progress=bar,
+                                                              ignore_deployed=ignore_deployed)
 
                 if emitter:
                     blockchain = BlockchainInterfaceFactory.get_interface()
@@ -771,7 +787,7 @@ class Staker(NucypherTokenActor):
 
     @only_me
     @save_receipt
-    def _set_restaking_value(self, value: bool) -> dict:
+    def _set_restaking(self, value: bool) -> dict:
         if self.is_contract:
             receipt = self.preallocation_escrow_agent.set_restaking(value=value)
         else:
@@ -779,7 +795,7 @@ class Staker(NucypherTokenActor):
         return receipt
 
     def enable_restaking(self) -> dict:
-        receipt = self._set_restaking_value(value=True)
+        receipt = self._set_restaking(value=True)
         return receipt
 
     @only_me
@@ -802,7 +818,29 @@ class Staker(NucypherTokenActor):
         return status
 
     def disable_restaking(self) -> dict:
-        receipt = self._set_restaking_value(value=False)
+        receipt = self._set_restaking(value=False)
+        return receipt
+
+    @property
+    def is_winding_down(self) -> bool:
+        winding_down = self.staking_agent.is_winding_down(staker_address=self.checksum_address)
+        return winding_down
+
+    @only_me
+    @save_receipt
+    def _set_winding_down(self, value: bool) -> dict:
+        if self.is_contract:
+            receipt = self.preallocation_escrow_agent.set_winding_down(value=value)
+        else:
+            receipt = self.staking_agent.set_winding_down(staker_address=self.checksum_address, value=value)
+        return receipt
+
+    def enable_winding_down(self) -> dict:
+        receipt = self._set_winding_down(value=True)
+        return receipt
+
+    def disable_winding_down(self) -> dict:
+        receipt = self._set_winding_down(value=False)
         return receipt
 
     #
@@ -989,7 +1027,6 @@ class BlockchainPolicyAuthor(NucypherTokenActor):
                  checksum_address: str,
                  rate: int = None,
                  duration_periods: int = None,
-                 first_period_reward: int = None,
                  *args, **kwargs):
         """
         :param policy_agent: A policy agent with the blockchain attached;
@@ -1006,12 +1043,6 @@ class BlockchainPolicyAuthor(NucypherTokenActor):
         self.economics = TokenEconomicsFactory.get_economics(registry=self.registry)
         self.rate = rate
         self.duration_periods = duration_periods
-        self.first_period_reward = first_period_reward
-
-        policy_value_specified = self.rate and self.first_period_reward
-        if policy_value_specified and self.first_period_reward >= self.rate:
-            raise ValueError(f"Policy rate of ({self.rate}) per period must be greater "
-                             f"than the first period rate of ({self.first_period_reward})")
 
     def generate_policy_parameters(self,
                                    number_of_ursulas: int = None,
@@ -1019,7 +1050,6 @@ class BlockchainPolicyAuthor(NucypherTokenActor):
                                    expiration: maya.MayaDT = None,
                                    value: int = None,
                                    rate: int = None,
-                                   first_period_reward: int = None,
                                    ) -> dict:
         """
         Construct policy creation from parameters or overrides.
@@ -1029,23 +1059,26 @@ class BlockchainPolicyAuthor(NucypherTokenActor):
             raise ValueError("Policy end time must be specified as 'expiration' or 'duration_periods', got neither.")
 
         # Merge injected and default params.
-        first_period_reward = first_period_reward or self.first_period_reward
         rate = rate or self.rate
         duration_periods = duration_periods or self.duration_periods
 
         # Calculate duration in periods and expiration datetime
-        if expiration:
-            duration_periods = calculate_period_duration(future_time=expiration,
-                                                         seconds_per_period=self.economics.seconds_per_period)
-        else:
-            duration_periods = duration_periods or self.duration_periods
+        if duration_periods:
+            # Duration equals one period means that expiration date is the last second of the current period
             expiration = datetime_at_period(self.staking_agent.get_current_period() + duration_periods,
-                                            seconds_per_period=self.economics.seconds_per_period)
+                                            seconds_per_period=self.economics.seconds_per_period,
+                                            start_of_period=True)
+            expiration -= 1  # Get the last second of the target period
+        else:
+            now = self.staking_agent.blockchain.w3.eth.getBlock(block_identifier='latest').timestamp
+            duration_periods = calculate_period_duration(now=maya.MayaDT(now),
+                                                         future_time=expiration,
+                                                         seconds_per_period=self.economics.seconds_per_period)
+            duration_periods += 1  # Number of all included periods
 
         from nucypher.policy.policies import BlockchainPolicy
         blockchain_payload = BlockchainPolicy.generate_policy_parameters(n=number_of_ursulas,
                                                                          duration_periods=duration_periods,
-                                                                         first_period_reward=first_period_reward,
                                                                          value=value,
                                                                          rate=rate)
 

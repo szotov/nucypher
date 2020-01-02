@@ -69,7 +69,7 @@ class TesterBlockchain(BlockchainDeployerInterface):
 
     _PROVIDER_URI = 'tester://pyevm'
     TEST_CONTRACTS_DIR = os.path.join(BASE_DIR, 'tests', 'blockchain', 'eth', 'contracts', 'contracts')
-    _compiler = SolidityCompiler(test_contract_dir=TEST_CONTRACTS_DIR)
+    _compiler = SolidityCompiler(source_dirs=[(SolidityCompiler.default_contract_dir(), {TEST_CONTRACTS_DIR})])
     _test_account_cache = list()
 
     _default_test_accounts = NUMBER_OF_ETH_TEST_ACCOUNTS
@@ -220,7 +220,8 @@ class TesterBlockchain(BlockchainDeployerInterface):
         origin = testerchain.client.etherbase
         deployer = ContractAdministrator(deployer_address=origin, 
                                          registry=registry, 
-                                         economics=economics or cls._default_token_economics)
+                                         economics=economics or cls._default_token_economics,
+                                         staking_escrow_test_mode=True)
         secrets = dict()
         for deployer_class in deployer.upgradeable_deployer_classes:
             secrets[deployer_class.contract_name] = INSECURE_DEVELOPMENT_PASSWORD

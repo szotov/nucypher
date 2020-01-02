@@ -1,0 +1,7 @@
+{
+	"cwd": ".crytic",
+	"slither": {
+        "enabled": true, 
+        "target": "../nucypher/blockchain/eth/sol/source/contracts"
+    }
+}
