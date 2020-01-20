@@ -28,7 +28,9 @@ An entire stake consists of:
     * unlocked tokens which the staker can withdraw at any moment
     * tokens locked for a specific period
 
-In terms of how the stake is slashed, unlocked tokens are the first portion of the stake to be slashed. After that, if necessary, locked sub-stakes are decreased in order based on their remaining lock time, beginning with the shortest. The shortest sub-stake is decreased, and if the adjustment of that sub-stake is insufficient to fulfil the required punishment sum, then the next shortest sub-stake is decreased, and so on. Sub-stakes that begin in the next period are checked separately. Only the sub-stakes for the current and next periods need to be checked for slashing since sub-stakes can only be locked starting in the current or next period.
+In terms of how the stake is slashed, unlocked tokens are the first portion of the stake to be slashed. After that, if necessary, locked sub-stakes are decreased in order based on their remaining lock time, beginning with the shortest. The shortest sub-stake is decreased, and if the adjustment of that sub-stake is insufficient to fulfil the required punishment sum, then the next shortest sub-stake is decreased, and so on. Sub-stakes that begin in the next period are checked separately.
+
+Sub-stakes for past periods cannot be slashed, so only the periods from now onward can be slashed. However, by design sub-stakes can't have a starting period that is after the next period, so all future periods after the next period will always have an amount of tokens less than or equal to the next period. The current period still needs to be checked since its stake may be different than the next period. Therefore, only the current period and the next period need to be checked for slashing.
 
 Overall the slashing algorithm is as follows:
 
