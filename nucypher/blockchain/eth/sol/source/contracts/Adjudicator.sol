@@ -4,21 +4,19 @@ pragma solidity ^0.8.0;
 
 import "contracts/lib/ReEncryptionValidator.sol";
 import "contracts/lib/SignatureVerifier.sol";
-import "contracts/IStakingEscrow.sol";
-import "contracts/proxy/Upgradeable.sol";
-import "zeppelin/math/SafeMath.sol";
 import "zeppelin/math/Math.sol";
+import "zeppelin/math/SafeCast.sol";
 
 
 /**
 * @title Adjudicator
-* @notice Supervises stakers' behavior and punishes when something's wrong.
-* @dev |v2.1.2|
+* @notice Supervises workers' behavior and punishes when something's wrong.
+* @dev |v3.1.1|
 */
-contract Adjudicator is Upgradeable {
+abstract contract Adjudicator {
 
-    using SafeMath for uint256;
     using UmbralDeserializer for bytes;
+    using SafeCast for uint256;
 
     event CFragEvaluated(
         bytes32 indexed evaluationHash,
@@ -28,50 +26,40 @@ contract Adjudicator is Upgradeable {
     event IncorrectCFragVerdict(
         bytes32 indexed evaluationHash,
         address indexed worker,
-        address indexed staker
+        address indexed operator
     );
 
     // used only for upgrading
     bytes32 constant RESERVED_CAPSULE_AND_CFRAG_BYTES = bytes32(0);
     address constant RESERVED_ADDRESS = address(0);
 
-    IStakingEscrow public immutable escrow;
     SignatureVerifier.HashAlgorithm public immutable hashAlgorithm;
     uint256 public immutable basePenalty;
     uint256 public immutable penaltyHistoryCoefficient;
     uint256 public immutable percentagePenaltyCoefficient;
-    uint256 public immutable rewardCoefficient;
 
     mapping (address => uint256) public penaltyHistory;
     mapping (bytes32 => bool) public evaluatedCFrags;
 
+    // TODO add slots
+
     /**
-    * @param _escrow Escrow contract
     * @param _hashAlgorithm Hashing algorithm
     * @param _basePenalty Base for the penalty calculation
     * @param _penaltyHistoryCoefficient Coefficient for calculating the penalty depending on the history
     * @param _percentagePenaltyCoefficient Coefficient for calculating the percentage penalty
-    * @param _rewardCoefficient Coefficient for calculating the reward
     */
     constructor(
-        IStakingEscrow _escrow,
         SignatureVerifier.HashAlgorithm _hashAlgorithm,
         uint256 _basePenalty,
         uint256 _penaltyHistoryCoefficient,
-        uint256 _percentagePenaltyCoefficient,
-        uint256 _rewardCoefficient
+        uint256 _percentagePenaltyCoefficient
     ) {
-        // Sanity checks.
-        require(_escrow.secondsPerPeriod() > 0 &&  // This contract has an escrow, and it's not the null address.
-            // The reward and penalty coefficients are set.
-            _percentagePenaltyCoefficient != 0 &&
-            _rewardCoefficient != 0);
-        escrow = _escrow;
+        require(_percentagePenaltyCoefficient != 0, "Wrong input parameters");
         hashAlgorithm = _hashAlgorithm;
         basePenalty = _basePenalty;
         percentagePenaltyCoefficient = _percentagePenaltyCoefficient;
         penaltyHistoryCoefficient = _penaltyHistoryCoefficient;
-        rewardCoefficient = _rewardCoefficient;
     }
 
     /**
@@ -158,54 +146,73 @@ contract Adjudicator is Upgradeable {
         address worker = SignatureVerifier.recover(
             SignatureVerifier.hashEIP191(stamp, bytes1(0x45)), // Currently, we use version E (0x45) of EIP191 signatures
             _workerIdentityEvidence);
-        address staker = escrow.stakerFromWorker(worker);
-        require(staker != address(0), "Worker must be related to a staker");
+        address operator = operatorFromWorker(worker);
+        require(operator != address(0), "Worker must be related to an operator");
 
-        // 5. Check that staker can be slashed
-        uint256 stakerValue = escrow.getAllTokens(staker);
-        require(stakerValue > 0, "Staker has no tokens");
+        // 5. Check that operator can be slashed
+        uint96 operatorValue = authorizedStake(operator);
+        require(operatorValue > 0, "Operator has no tokens");
 
-        // 6. If CFrag was incorrect, slash staker
+        // 6. If CFrag was incorrect, slash operator
         if (!cFragIsCorrect) {
-            (uint256 penalty, uint256 reward) = calculatePenaltyAndReward(staker, stakerValue);
-            escrow.slashStaker(staker, penalty, msg.sender, reward);
-            emit IncorrectCFragVerdict(evaluationHash, worker, staker);
+            uint96 penalty = calculatePenalty(operator, operatorValue);
+            slash(operator, penalty, msg.sender);
+            emit IncorrectCFragVerdict(evaluationHash, worker, operator);
         }
     }
 
     /**
-    * @notice Calculate penalty to the staker and reward to the investigator
-    * @param _staker Staker's address
-    * @param _stakerValue Amount of tokens that belong to the staker
+    * @notice Calculate penalty to the operator
+    * @param _operator Operator's address
+    * @param _operatorValue Amount of tokens that belong to the operator
     */
-    function calculatePenaltyAndReward(address _staker, uint256 _stakerValue)
-        internal returns (uint256 penalty, uint256 reward)
+    function calculatePenalty(address _operator, uint96 _operatorValue)
+        internal returns (uint96)
     {
-        penalty = basePenalty.add(penaltyHistoryCoefficient.mul(penaltyHistory[_staker]));
-        penalty = Math.min(penalty, _stakerValue.div(percentagePenaltyCoefficient));
-        reward = penalty.div(rewardCoefficient);
+        uint256 penalty = basePenalty + penaltyHistoryCoefficient * penaltyHistory[_operator];
+        penalty = Math.min(penalty, _operatorValue / percentagePenaltyCoefficient);
         // TODO add maximum condition or other overflow protection or other penalty condition (#305?)
-        penaltyHistory[_staker] = penaltyHistory[_staker].add(1);
+        penaltyHistory[_operator] = penaltyHistory[_operator] + 1;
+        return penalty.toUint96();
     }
 
-    /// @dev the `onlyWhileUpgrading` modifier works through a call to the parent `verifyState`
-    function verifyState(address _testTarget) public override virtual {
-        super.verifyState(_testTarget);
-        bytes32 evaluationCFragHash = SignatureVerifier.hash(
-            abi.encodePacked(RESERVED_CAPSULE_AND_CFRAG_BYTES), SignatureVerifier.HashAlgorithm.SHA256);
-        require(delegateGet(_testTarget, this.evaluatedCFrags.selector, evaluationCFragHash) ==
-            (evaluatedCFrags[evaluationCFragHash] ? 1 : 0));
-        require(delegateGet(_testTarget, this.penaltyHistory.selector, bytes32(bytes20(RESERVED_ADDRESS))) ==
-            penaltyHistory[RESERVED_ADDRESS]);
-    }
+    /**
+    * @notice Get all tokens delegated to the operator
+    */
+    function authorizedStake(address _operator) public view virtual returns (uint96);
 
-    /// @dev the `onlyWhileUpgrading` modifier works through a call to the parent `finishUpgrade`
-    function finishUpgrade(address _target) public override virtual {
-        super.finishUpgrade(_target);
-        // preparation for the verifyState method
-        bytes32 evaluationCFragHash = SignatureVerifier.hash(
-            abi.encodePacked(RESERVED_CAPSULE_AND_CFRAG_BYTES), SignatureVerifier.HashAlgorithm.SHA256);
-        evaluatedCFrags[evaluationCFragHash] = true;
-        penaltyHistory[RESERVED_ADDRESS] = 123;
-    }
+    /**
+    * @notice Get operator address bonded with specified worker address
+    */
+    function operatorFromWorker(address _worker) public view virtual returns (address);
+
+    /**
+    * @notice Slash the operator's stake and reward the investigator
+    * @param _operator Operator's address
+    * @param _penalty Penalty
+    * @param _investigator Investigator
+    */
+    function slash(
+        address _operator,
+        uint96 _penalty,
+        address _investigator
+    ) internal virtual;
+
+//    function verifyAdjudicatorState(address _testTarget) public virtual {
+//        bytes32 evaluationCFragHash = SignatureVerifier.hash(
+//            abi.encodePacked(RESERVED_CAPSULE_AND_CFRAG_BYTES), SignatureVerifier.HashAlgorithm.SHA256);
+//        require(Getters.delegateGet(_testTarget, this.evaluatedCFrags.selector, evaluationCFragHash) ==
+//            (evaluatedCFrags[evaluationCFragHash] ? 1 : 0));
+//        require(Getters.delegateGet(_testTarget, this.penaltyHistory.selector, bytes32(bytes20(RESERVED_ADDRESS))) ==
+//            penaltyHistory[RESERVED_ADDRESS]);
+//    }
+//
+//    function finishAdjudicatorUpgrade(address _target) public virtual {
+//        // preparation for the verifyState method
+//        bytes32 evaluationCFragHash = SignatureVerifier.hash(
+//            abi.encodePacked(RESERVED_CAPSULE_AND_CFRAG_BYTES), SignatureVerifier.HashAlgorithm.SHA256);
+//        evaluatedCFrags[evaluationCFragHash] = true;
+//        penaltyHistory[RESERVED_ADDRESS] = 123;
+//    }
+
 }
