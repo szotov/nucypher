@@ -79,6 +79,14 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     */
     event Slashed(address indexed operator, uint256 penalty, address indexed investigator, uint256 reward);
 
+    /**
+    * @notice Signals that a worker was bonded to the operator
+    * @param operator Operator address
+    * @param worker Worker address
+    * @param startTimestamp Timestamp bonding occurred
+    */
+    event WorkerBonded(address indexed operator, address indexed worker, uint256 startTimestamp);
+
     struct OperatorInfo {
         uint96 authorized;
         uint96 tReward;
@@ -86,17 +94,22 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
 
         uint96 deauthorizing;
         uint256 endDeauthorization;
+
+        address worker;
+        uint256 workerStartTimestamp;
     }
 
     uint256 public immutable rewardDuration;
     uint256 public immutable deauthorizationDuration;
     uint256 public immutable minAuthorization;
+    uint256 public immutable minWorkerSeconds;
 
     IERC20 public immutable token;
     IStaking public immutable tStaking;
 
     mapping (address => OperatorInfo) public operatorInfo;
     address[] public operators;
+    mapping(address => address) internal _operatorFromWorker;
 
     address public rewardDistributor;
     uint256 public periodFinish = 0;
@@ -116,7 +129,7 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     * @param _rewardDuration Duration of one reward cycle
     * @param _deauthorizationDuration Duration of decreasing authorization
     * @param _minAuthorization Amount of minimum allowable authorization
-    *
+    * @param _minWorkerSeconds Min amount of seconds while a worker can't be changed
     */
     constructor(
         SignatureVerifier.HashAlgorithm _hashAlgorithm,
@@ -127,7 +140,8 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         IStaking _tokenStaking,
         uint256 _rewardDuration,
         uint256 _deauthorizationDuration,
-        uint256 _minAuthorization
+        uint256 _minAuthorization,
+        uint256 _minWorkerSeconds
     )
         Adjudicator(
             _hashAlgorithm,
@@ -146,6 +160,7 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         minAuthorization = _minAuthorization;
         token = _token;
         tStaking = _tokenStaking;
+        minWorkerSeconds = _minWorkerSeconds;
     }
 
     /**
@@ -162,6 +177,16 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     modifier onlyStakingContract()
     {
         require(msg.sender == address(tStaking), "Caller must be the T staking contract");
+        _;
+    }
+
+    /**
+    * @dev Checks the existence of an operator in the contract
+    */
+    modifier onlyOperator()
+    {
+        OperatorInfo storage info = operatorInfo[msg.sender];
+        require(info.authorized > 0, "Caller is not the operator");
         _;
     }
 
@@ -269,7 +294,18 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         require(_operator != address(0) && _amount > 0, "Input parameters must be specified");
 
         OperatorInfo storage info = operatorInfo[_operator];
-        if (info.rewardPerTokenPaid == 0) {
+        require(
+            _operatorFromWorker[_operator] == address(0) ||
+            _operatorFromWorker[_operator] == info.worker,
+            "An operator can't be a worker for another operator"
+        );
+
+        // TODO duplicate if no reward and 100% deauthorized and was no worker
+        if (
+            info.authorized == 0 &&
+            info.rewardPerTokenPaid == 0 &&
+            info.workerStartTimestamp == 0
+        ) {
             operators.push(_operator);
         }
 
@@ -332,6 +368,10 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         info.deauthorizing = 0;
         info.endDeauthorization = 0;
 
+        if (info.authorized == 0) {
+            info.worker = address(0);
+        }
+
         tStaking.approveAuthorizationDecrease(_operator);
     }
 
@@ -352,9 +392,11 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     }
 
     //-------------------------Main-------------------------
-    // TODO finish
+    /**
+    * @notice Returns operator for specified worker
+    */
     function operatorFromWorker(address _worker) public view override returns (address) {
-
+        return _operatorFromWorker[_worker];
     }
 
     /**
@@ -412,6 +454,39 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     */
     function isAuthorized(address _operator) internal view override returns (bool) {
         return operatorInfo[_operator].authorized > 0;
+    }
+
+    /**
+    * @notice Bond worker
+    * @param _worker Worker address. Must be a real address, not a contract
+    */
+    function bondWorker(address _worker) external onlyOperator {
+        OperatorInfo storage info = operatorInfo[msg.sender];
+        require(_worker != info.worker, "Specified worker is already bonded with this operator");
+        // If this staker had a worker ...
+        if (info.worker != address(0)) {
+            require(
+                block.timestamp >= info.workerStartTimestamp + minWorkerSeconds,
+                "Not enough time passed to change worker"
+            );
+            // Remove the old relation "worker->operator"
+            _operatorFromWorker[info.worker] = address(0);
+        }
+
+        if (_worker != address(0)) {
+            require(_operatorFromWorker[_worker] == address(0), "Specified worker is already in use");
+            require(
+                _worker == msg.sender || getBeneficiary(_worker) == address(0),
+                "Specified worker is an operator"
+            );
+            // Set new worker->operator relation
+            _operatorFromWorker[_worker] = msg.sender;
+        }
+
+        // Bond new worker (or unbond if _worker == address(0))
+        info.worker = _worker;
+        info.workerStartTimestamp = block.timestamp;
+        emit WorkerBonded(msg.sender, _worker, block.timestamp);
     }
 
     //-------------------------Slashing-------------------------
