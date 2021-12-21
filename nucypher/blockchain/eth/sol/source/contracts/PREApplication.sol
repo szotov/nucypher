@@ -39,23 +39,26 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     /**
     * @notice Signals that authorization was increased for the operator
     * @param operator Operator address
-    * @param amount Amount of increased authorization
+    * @param fromAmount Previous amount of increased authorization
+    * @param toAmount New amount of increased authorization
     */
-    event AuthorizationIncreased(address indexed operator, uint96 amount);
+    event AuthorizationIncreased(address indexed operator, uint96 fromAmount, uint96 toAmount);
 
     /**
     * @notice Signals that authorization was decreased involuntary
     * @param operator Operator address
-    * @param amount Amount of decreased authorization
+    * @param fromAmount Previous amount of authorized tokens
+    * @param toAmount Amount of authorized tokens to decrease
     */
-    event AuthorizationInvoluntaryDecreased(address indexed operator, uint96 amount);
+    event AuthorizationInvoluntaryDecreased(address indexed operator, uint96 fromAmount, uint96 toAmount);
 
     /**
     * @notice Signals that authorization decrease was requested for the operator
     * @param operator Operator address
-    * @param amount Amount of authorization to decrease
+    * @param fromAmount Current amount of authorized tokens
+    * @param toAmount Amount of authorization to decrease
     */
-    event AuthorizationDecreaseRequested(address indexed operator, uint96 amount);
+    event AuthorizationDecreaseRequested(address indexed operator, uint96 fromAmount, uint96 toAmount);
 
     /**
     * @notice Signals that authorization decrease was approved for the operator
@@ -288,10 +291,18 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     /**
     * @notice Recalculate reward and save increased authorization. Can be called only by staking contract
     * @param _operator Address of operator
-    * @param _amount Amount of authorized tokens to PRE application by operator
+    * @param _fromAmount Amount of previously authorized tokens to PRE application by operator
+    * @param _toAmount Amount of authorized tokens to PRE application by operator
     */
-    function authorizationIncreased(address _operator, uint96 _amount) external override onlyStakingContract {
-        require(_operator != address(0) && _amount > 0, "Input parameters must be specified");
+    function authorizationIncreased(
+        address _operator,
+        uint96 _fromAmount,
+        uint96 _toAmount
+    )
+        external override onlyStakingContract
+    {
+        require(_operator != address(0) && _toAmount > 0, "Input parameters must be specified");
+        require(_toAmount >= minAuthorization, "Authorization must be greater than minimum");
 
         OperatorInfo storage info = operatorInfo[_operator];
         require(
@@ -311,46 +322,59 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
 
         updateRewardInternal(_operator);
 
-        info.authorized += _amount;
-        require(info.authorized >= minAuthorization, "Authorization must be greater than minimum");
-        authorizedOverall += _amount;
-        emit AuthorizationIncreased(_operator, _amount);
+        info.authorized = _toAmount;
+        authorizedOverall += _toAmount - _fromAmount;
+        emit AuthorizationIncreased(_operator, _fromAmount, _toAmount);
     }
 
     /**
     * @notice Immediately decrease authorization. Can be called only by staking contract
     * @param _operator Address of operator
-    * @param _amount Amount of authorized tokens to decrease
+    * @param _fromAmount Previous amount of authorized tokens
+    * @param _toAmount Amount of authorized tokens to decrease
     */
-    function involuntaryAuthorizationDecrease(address _operator, uint96 _amount)
+    function involuntaryAuthorizationDecrease(
+        address _operator,
+        uint96 _fromAmount,
+        uint96 _toAmount
+    )
         external override onlyStakingContract updateReward(_operator)
     {
         OperatorInfo storage info = operatorInfo[_operator];
-        info.authorized -= _amount;
+        info.authorized = _toAmount;
         if (info.authorized < info.deauthorizing) {
             info.deauthorizing = info.authorized;
         }
-        authorizedOverall -= _amount;
-        emit AuthorizationInvoluntaryDecreased(_operator, _amount);
+        authorizedOverall -= _fromAmount - _toAmount;
+        emit AuthorizationInvoluntaryDecreased(_operator, _fromAmount, _toAmount);
+
+        if (info.authorized == 0) {
+            info.worker = address(0);
+        }
     }
 
     /**
     * @notice Register request of decreasing authorization. Can be called only by staking contract
     * @param _operator Address of operator
-    * @param _amount Amount of authorized tokens to decrease
+    * @param _fromAmount Current amount of authorized tokens
+    * @param _toAmount Amount of authorized tokens to decrease
     */
-    function authorizationDecreaseRequested(address _operator, uint96 _amount)
+    function authorizationDecreaseRequested(
+        address _operator,
+        uint96 _fromAmount,
+        uint96 _toAmount
+    )
         external override onlyStakingContract
     {
         OperatorInfo storage info = operatorInfo[_operator];
-        require(_amount <= info.authorized, "Amount to decrease greater than authorized");
+        require(_toAmount <= info.authorized, "Amount to decrease greater than authorized");
         require(
-            info.authorized - _amount >= minAuthorization,
+            _toAmount >= minAuthorization,
             "Resulting authorization will be less than minimum"
         );
-        info.deauthorizing = _amount;
+        info.deauthorizing = _fromAmount - _toAmount;
         info.endDeauthorization = block.timestamp + deauthorizationDuration;
-        emit AuthorizationDecreaseRequested(_operator, _amount);
+        emit AuthorizationDecreaseRequested(_operator, _fromAmount, _toAmount);
     }
 
     /**
