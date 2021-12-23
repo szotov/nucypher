@@ -90,6 +90,13 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     */
     event WorkerBonded(address indexed operator, address indexed worker, uint256 startTimestamp);
 
+    /**
+    * @notice Signals that a worker address is confirmed
+    * @param operator Operator address
+    * @param worker Worker address
+    */
+    event WorkerConfirmed(address indexed operator, address indexed worker);
+
     struct OperatorInfo {
         uint96 authorized;
         uint96 tReward;
@@ -99,6 +106,7 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         uint256 endDeauthorization;
 
         address worker;
+        bool workerConfirmed;
         uint256 workerStartTimestamp;
     }
 
@@ -247,6 +255,9 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     */
     function earned(address _operator) public view returns (uint96) {
         OperatorInfo storage info = operatorInfo[_operator];
+        if (!info.workerConfirmed) {
+            return info.tReward;
+        }
         return info.authorized * (rewardPerToken() - info.rewardPerTokenPaid) / 1e18 + info.tReward;
     }
 
@@ -321,9 +332,11 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         }
 
         updateRewardInternal(_operator);
+        if (info.workerConfirmed) {
+            authorizedOverall += _toAmount - _fromAmount;
+        }
 
         info.authorized = _toAmount;
-        authorizedOverall += _toAmount - _fromAmount;
         emit AuthorizationIncreased(_operator, _fromAmount, _toAmount);
     }
 
@@ -345,11 +358,14 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         if (info.authorized < info.deauthorizing) {
             info.deauthorizing = info.authorized;
         }
-        authorizedOverall -= _fromAmount - _toAmount;
+        if (info.workerConfirmed) {
+            authorizedOverall -= _fromAmount - _toAmount;
+        }
         emit AuthorizationInvoluntaryDecreased(_operator, _fromAmount, _toAmount);
 
         if (info.authorized == 0) {
             info.worker = address(0);
+            info.workerConfirmed == false;
         }
     }
 
@@ -388,12 +404,15 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
 
         emit AuthorizationDecreaseApproved(_operator, info.deauthorizing);
         info.authorized -= info.deauthorizing;
-        authorizedOverall -= info.deauthorizing;
+        if (info.workerConfirmed) {
+            authorizedOverall -= info.deauthorizing;
+        }
         info.deauthorizing = 0;
         info.endDeauthorization = 0;
 
         if (info.authorized == 0) {
             info.worker = address(0);
+            info.workerConfirmed == false;
         }
 
         tStaking.approveAuthorizationDecrease(_operator);
@@ -407,7 +426,9 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         OperatorInfo storage info = operatorInfo[_operator];
         uint96 authorized = tStaking.authorizedStake(_operator, address(this));
         require(info.authorized != authorized, "Nothing to synchronize");
-        authorizedOverall -= authorized - info.authorized;
+        if (info.workerConfirmed) {
+            authorizedOverall -= authorized - info.authorized;
+        }
         info.authorized = authorized;
         if (info.authorized < info.deauthorizing) {
             info.deauthorizing = info.authorized; // TODO ideally resync this too
@@ -454,7 +475,7 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
             address operator = operators[i];
             OperatorInfo storage info = operatorInfo[operator];
             uint256 eligibleAmount = info.authorized - info.deauthorizing;
-            if (eligibleAmount == 0) {
+            if (eligibleAmount == 0 || !info.workerConfirmed) {
                 continue;
             }
             activeOperators[resultIndex][0] = uint256(uint160(operator));
@@ -507,10 +528,29 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
             _operatorFromWorker[_worker] = msg.sender;
         }
 
+        if (info.workerConfirmed) {
+            authorizedOverall -= info.authorized;
+        }
+
         // Bond new worker (or unbond if _worker == address(0))
         info.worker = _worker;
         info.workerStartTimestamp = block.timestamp;
+        info.workerConfirmed = false;
         emit WorkerBonded(msg.sender, _worker, block.timestamp);
+    }
+
+    /**
+    * @notice Make a confirmation by worker
+    */
+    function confirmWorkerAddress() external {
+        address operator = _operatorFromWorker[msg.sender];
+        OperatorInfo storage info = operatorInfo[operator];
+        require(!info.workerConfirmed, "Worker address is already confirmed");
+        require(info.authorized > 0, "No stake associated with the worker");
+        require(msg.sender == tx.origin, " Only worker with real address can make a confirmation");
+        info.workerConfirmed = true;
+        authorizedOverall += info.authorized;
+        emit WorkerConfirmed(operator, msg.sender);
     }
 
     //-------------------------Slashing-------------------------
