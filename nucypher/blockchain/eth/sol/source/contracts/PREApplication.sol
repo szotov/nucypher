@@ -7,17 +7,17 @@ import "zeppelin/math/Math.sol";
 import "zeppelin/math/SafeCast.sol";
 import "zeppelin/token/ERC20/SafeERC20.sol";
 import "zeppelin/token/ERC20/IERC20.sol";
+import "zeppelin/ownership/Ownable.sol";
 import "threshold/IApplication.sol";
 import "threshold/IStaking.sol";
 import "contracts/Adjudicator.sol";
-import "contracts/PolicyManager.sol";
 
 
 /**
 * @title PRE Application
 * @notice Contract distributes rewards for participating in app and slashes for violating rules
 */
-contract PREApplication is IApplication, Adjudicator, PolicyManager {
+contract PREApplication is IApplication, Adjudicator, Ownable {
 
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -136,7 +136,7 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     * @param _penaltyHistoryCoefficient Coefficient for calculating the penalty depending on the history
     * @param _percentagePenaltyCoefficient Coefficient for calculating the percentage penalty
     * @param _token T token contract
-    * @param _tokenStaking T token staking contract
+    * @param _tStaking T token staking contract
     * @param _rewardDuration Duration of one reward cycle
     * @param _deauthorizationDuration Duration of decreasing authorization
     * @param _minAuthorization Amount of minimum allowable authorization
@@ -148,7 +148,7 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         uint256 _penaltyHistoryCoefficient,
         uint256 _percentagePenaltyCoefficient,
         IERC20 _token,
-        IStaking _tokenStaking,
+        IStaking _tStaking,
         uint256 _rewardDuration,
         uint256 _deauthorizationDuration,
         uint256 _minAuthorization,
@@ -163,6 +163,7 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     {
         require(
             _rewardDuration != 0 &&
+            _tStaking.authorizedStake(address(this), address(this)) == 0 &&
             _token.totalSupply() > 0,
             "Wrong input parameters"
         );
@@ -170,7 +171,7 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
         deauthorizationDuration = _deauthorizationDuration;
         minAuthorization = _minAuthorization;
         token = _token;
-        tStaking = _tokenStaking;
+        tStaking = _tStaking;
         minWorkerSeconds = _minWorkerSeconds;
     }
 
@@ -422,10 +423,10 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     * @notice Read authorization from staking contract and store it. Can be called only by anyone
     * @param _operator Address of operator
     */
-    function resynchronizeAuthorization(address _operator) external {
+    function resynchronizeAuthorization(address _operator) external updateReward(_operator) {
         OperatorInfo storage info = operatorInfo[_operator];
         uint96 authorized = tStaking.authorizedStake(_operator, address(this));
-        require(info.authorized != authorized, "Nothing to synchronize");
+        require(info.authorized < authorized, "Nothing to synchronize");
         if (info.workerConfirmed) {
             authorizedOverall -= authorized - info.authorized;
         }
@@ -490,14 +491,14 @@ contract PREApplication is IApplication, Adjudicator, PolicyManager {
     /**
     * @notice Returns beneficiary related to the operator
     */
-    function getBeneficiary(address _operator) internal view override returns (address payable beneficiary) {
+    function getBeneficiary(address _operator) public view returns (address payable beneficiary) {
         (, beneficiary,) = tStaking.rolesOf(_operator);
     }
 
     /**
     * @notice Returns true if operator has authorized stake to this application
     */
-    function isAuthorized(address _operator) internal view override returns (bool) {
+    function isAuthorized(address _operator) external view returns (bool) {
         return operatorInfo[_operator].authorized > 0;
     }
 

@@ -3,21 +3,21 @@
 pragma solidity ^0.8.0;
 
 
-import "contracts/SimplePREApplication.sol";
-//import "zeppelin/token/ERC20/ERC20.sol";
-//import "zeppelin/token/ERC20/ERC20Detailed.sol";
+import "contracts/PREApplication.sol";
+import "zeppelin/token/ERC20/ERC20.sol";
+import "zeppelin/token/ERC20/ERC20Detailed.sol";
 
 
-///**
-//* @notice Contract for testing PRE application contract
-//*/
-//contract TToken is ERC20, ERC20Detailed('T', 'T', 18) {
-//
-//    constructor (uint256 _totalSupplyOfTokens) {
-//        _mint(msg.sender, _totalSupplyOfTokens);
-//    }
-//
-//}
+/**
+* @notice Contract for testing PRE application contract
+*/
+contract TToken is ERC20, ERC20Detailed('T', 'T', 18) {
+
+    constructor (uint256 _totalSupplyOfTokens) {
+        _mint(msg.sender, _totalSupplyOfTokens);
+    }
+
+}
 
 
 /**
@@ -111,22 +111,22 @@ contract ThresholdStakingForPREApplicationMock {
         authorizer = info.authorizer;
     }
 
-//    function approveAuthorizationDecrease(address _stakingProvider) external returns (uint96) {
-//
-//    }
+    function approveAuthorizationDecrease(address _stakingProvider) external returns (uint96) {
 
-//    function seize(
-//        uint96 _amount,
-//        uint256 _rewardMultipier,
-//        address _notifier,
-//        address[] memory _stakingProviders
-//    ) external {
-//
-//    }
+    }
 
-//    function authorizationIncreased(address _stakingProvider, uint96 _fromAmount, uint96 _toAmount) external {
-//        preApplication.authorizationIncreased(_stakingProvider, _fromAmount, _toAmount);
-//    }
+    function seize(
+        uint96 _amount,
+        uint256 _rewardMultipier,
+        address _notifier,
+        address[] memory _stakingProviders
+    ) external {
+
+    }
+
+    function authorizationIncreased(address _stakingProvider, uint96 _fromAmount, uint96 _toAmount) external {
+        preApplication.authorizationIncreased(_stakingProvider, _fromAmount, _toAmount);
+    }
 
 }
 

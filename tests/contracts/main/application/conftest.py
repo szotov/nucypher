@@ -26,11 +26,11 @@ from tests.utils.ursula import MOCK_URSULA_STARTING_PORT
 from tests.utils.config import make_ursula_test_configuration
 from nucypher.blockchain.eth.registry import InMemoryContractRegistry
 
-# @pytest.fixture()
-# def token(deploy_contract, token_economics):
-#     # Create an ERC20 token
-#     token, _ = deploy_contract('TToken', _totalSupplyOfTokens=token_economics.erc20_total_supply)
-#     return token
+@pytest.fixture()
+def token(deploy_contract, token_economics):
+    # Create an ERC20 token
+    token, _ = deploy_contract('TToken', _totalSupplyOfTokens=token_economics.erc20_total_supply)
+    return token
 
 
 @pytest.fixture()
@@ -40,14 +40,19 @@ def threshold_staking(deploy_contract):
 
 
 @pytest.fixture()
-def pre_application(testerchain, threshold_staking, deploy_contract, application_economics):
+def pre_application(testerchain, token, threshold_staking, deploy_contract, application_economics):
     min_authorization = application_economics.min_authorization
     min_operator_seconds = application_economics.min_operator_seconds
-
+    reward_duration = 60 * 60
+    deauthorization_duration = 60 * 60
     # Creator deploys the PRE application
     contract, _ = deploy_contract(
-        'SimplePREApplication',
+        'PREApplication',
+        *token_economics.slashing_deployment_parameters,
+        token.address,
         threshold_staking.address,
+        reward_duration,
+        deauthorization_duration,
         min_authorization,
         min_operator_seconds
     )
