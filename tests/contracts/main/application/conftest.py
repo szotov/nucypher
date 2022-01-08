@@ -17,7 +17,6 @@ along with nucypher.  If not, see <https://www.gnu.org/licenses/>.
 
 
 import pytest
-from web3.contract import Contract
 
 from tests.constants import (
     TEST_ETH_PROVIDER_URI,

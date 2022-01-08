@@ -22,6 +22,9 @@ from nucypher.blockchain.eth.constants import NULL_ADDRESS
 from nucypher.blockchain.eth.token import NU
 
 
+AUTHORIZATION_SLOT = 3
+
+
 def test_authorization_increase(testerchain, threshold_staking, pre_application, token_economics):
     """
     Tests for authorization method: authorizationIncreased
@@ -64,7 +67,7 @@ def test_authorization_increase(testerchain, threshold_staking, pre_application,
         operator1, 0, value
     ).transact({'from': creator})
     testerchain.wait_for_receipt(tx)
-    assert pre_application.functions.operatorInfo(operator1).call()[0] == value
+    assert pre_application.functions.operatorInfo(operator1).call()[AUTHORIZATION_SLOT] == value
     assert pre_application.functions.authorizedOverall().call() == 0
 
     # Check that all events are emitted

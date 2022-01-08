@@ -34,11 +34,11 @@ contract ThresholdStakingForPREApplicationMock {
         uint96 nuInTStake;
     }
 
-    SimplePREApplication public preApplication;
+    PREApplication public preApplication;
 
     mapping (address => StakingProviderInfo) public stakingProviderInfo;
 
-    function setApplication(SimplePREApplication _preApplication) external {
+    function setApplication(PREApplication _preApplication) external {
         preApplication = _preApplication;
     }
 
@@ -128,6 +128,16 @@ contract ThresholdStakingForPREApplicationMock {
         preApplication.authorizationIncreased(_stakingProvider, _fromAmount, _toAmount);
     }
 
+    function involuntaryAuthorizationDecrease(
+        address _operator,
+        uint96 _fromAmount,
+        uint96 _toAmount
+    )
+        external
+    {
+        preApplication.involuntaryAuthorizationDecrease(_operator, _fromAmount, _toAmount);
+    }
+
 }
 
 
@@ -136,9 +146,9 @@ contract ThresholdStakingForPREApplicationMock {
 */
 contract Intermediary {
 
-    SimplePREApplication immutable preApplication;
+    PREApplication immutable preApplication;
 
-    constructor(SimplePREApplication _preApplication) {
+    constructor(PREApplication _preApplication) {
         preApplication = _preApplication;
     }
 

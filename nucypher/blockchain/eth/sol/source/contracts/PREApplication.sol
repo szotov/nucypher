@@ -98,25 +98,25 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     event WorkerConfirmed(address indexed operator, address indexed worker);
 
     struct OperatorInfo {
+        address worker;
+        bool workerConfirmed;
+        uint256 workerStartTimestamp;
+
         uint96 authorized;
         uint96 tReward;
         uint96 rewardPerTokenPaid;
 
         uint96 deauthorizing;
         uint256 endDeauthorization;
-
-        address worker;
-        bool workerConfirmed;
-        uint256 workerStartTimestamp;
     }
 
-    uint256 public immutable rewardDuration;
-    uint256 public immutable deauthorizationDuration;
     uint256 public immutable minAuthorization;
     uint256 public immutable minWorkerSeconds;
+    uint256 public immutable rewardDuration;
+    uint256 public immutable deauthorizationDuration;
 
-    IERC20 public immutable token;
     IStaking public immutable tStaking;
+    IERC20 public immutable token;
 
     mapping (address => OperatorInfo) public operatorInfo;
     address[] public operators;
@@ -197,8 +197,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     */
     modifier onlyOperator()
     {
-        OperatorInfo storage info = operatorInfo[msg.sender];
-        require(info.authorized > 0, "Caller is not the operator");
+        require(isAuthorized(msg.sender), "Caller is not the operator");
         _;
     }
 
@@ -311,7 +310,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
         uint96 _fromAmount,
         uint96 _toAmount
     )
-        external override onlyStakingContract
+        external override onlyStakingContract updateReward(_operator)
     {
         require(_operator != address(0) && _toAmount > 0, "Input parameters must be specified");
         require(_toAmount >= minAuthorization, "Authorization must be greater than minimum");
@@ -323,16 +322,6 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
             "An operator can't be a worker for another operator"
         );
 
-        // TODO duplicate if no reward and 100% deauthorized and was no worker
-        if (
-            info.authorized == 0 &&
-            info.rewardPerTokenPaid == 0 &&
-            info.workerStartTimestamp == 0
-        ) {
-            operators.push(_operator);
-        }
-
-        updateRewardInternal(_operator);
         if (info.workerConfirmed) {
             authorizedOverall += _toAmount - _fromAmount;
         }
@@ -386,7 +375,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
         OperatorInfo storage info = operatorInfo[_operator];
         require(_toAmount <= info.authorized, "Amount to decrease greater than authorized");
         require(
-            _toAmount >= minAuthorization,
+            _toAmount == 0 || _toAmount >= minAuthorization,
             "Resulting authorization will be less than minimum"
         );
         info.deauthorizing = _fromAmount - _toAmount;
@@ -446,6 +435,13 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     }
 
     /**
+    * @notice Returns worker for specified operator
+    */
+    function getWorkerFromOperator(address _operator) public view returns (address) {
+        return operatorInfo[_operator].worker;
+    }
+
+    /**
     * @notice Get all tokens delegated to the operator
     */
     function authorizedStake(address _operator) public view override returns (uint96) {
@@ -476,7 +472,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
             address operator = operators[i];
             OperatorInfo storage info = operatorInfo[operator];
             uint256 eligibleAmount = info.authorized - info.deauthorizing;
-            if (eligibleAmount == 0 || !info.workerConfirmed) {
+            if (eligibleAmount < minAuthorization || !info.workerConfirmed) {
                 continue;
             }
             activeOperators[resultIndex][0] = uint256(uint160(operator));
@@ -498,15 +494,32 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     /**
     * @notice Returns true if operator has authorized stake to this application
     */
-    function isAuthorized(address _operator) external view returns (bool) {
+    function isAuthorized(address _operator) public view returns (bool) {
         return operatorInfo[_operator].authorized > 0;
+    }
+
+    /**
+    * @notice Returns true if worker has confirmed address
+    */
+    // TODO maybe _operator instead of _worker?
+    function isWorkerConfirmed(address _worker) public view returns (bool) {
+        address operator = _operatorFromWorker[_worker];
+        OperatorInfo storage info = operatorInfo[operator];
+        return info.workerConfirmed;
+    }
+
+    /**
+    * @notice Return the length of the array of operators
+    */
+    function getOperatorsLength() external view returns (uint256) {
+        return operators.length;
     }
 
     /**
     * @notice Bond worker
     * @param _worker Worker address. Must be a real address, not a contract
     */
-    function bondWorker(address _worker) external onlyOperator {
+    function bondWorker(address _worker) external onlyOperator updateReward(msg.sender) {
         OperatorInfo storage info = operatorInfo[msg.sender];
         require(_worker != info.worker, "Specified worker is already bonded with this operator");
         // If this staker had a worker ...
@@ -529,6 +542,10 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
             _operatorFromWorker[_worker] = msg.sender;
         }
 
+        if (info.workerStartTimestamp == 0) {
+            operators.push(msg.sender);
+        }
+
         if (info.workerConfirmed) {
             authorizedOverall -= info.authorized;
         }
@@ -545,10 +562,12 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     */
     function confirmWorkerAddress() external {
         address operator = _operatorFromWorker[msg.sender];
+        require(isAuthorized(operator), "No stake associated with the worker");
         OperatorInfo storage info = operatorInfo[operator];
         require(!info.workerConfirmed, "Worker address is already confirmed");
-        require(info.authorized > 0, "No stake associated with the worker");
-        require(msg.sender == tx.origin, " Only worker with real address can make a confirmation");
+        require(msg.sender == tx.origin, "Only worker with real address can make a confirmation");
+
+        updateRewardInternal(operator);
         info.workerConfirmed = true;
         authorizedOverall += info.authorized;
         emit WorkerConfirmed(operator, msg.sender);
