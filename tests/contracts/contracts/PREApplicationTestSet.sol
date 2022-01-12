@@ -29,9 +29,8 @@ contract ThresholdStakingForPREApplicationMock {
         address owner;
         address payable beneficiary;
         address authorizer;
-        uint96 tStake;
-        uint96 keepInTStake;
-        uint96 nuInTStake;
+        uint96 authorized;
+        uint96 decreaseRequestTo;
     }
 
     PREApplication public preApplication;
@@ -52,7 +51,7 @@ contract ThresholdStakingForPREApplicationMock {
         address payable _beneficiary,
         address _authorizer
     )
-        external
+        public
     {
         StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
         info.owner = _owner;
@@ -65,39 +64,20 @@ contract ThresholdStakingForPREApplicationMock {
     * we presume that the caller wants that address set for the other roles as well.
     */
     function setRoles(address _stakingProvider) external {
-        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
-        info.owner = _stakingProvider;
-        info.beneficiary = payable(_stakingProvider);
-        info.authorizer = _stakingProvider;
+        setRoles(_stakingProvider, _stakingProvider, payable(_stakingProvider), _stakingProvider);
     }
 
-    function setStakes(
-        address _stakingProvider,
-        uint96 _tStake,
-        uint96 _keepInTStake,
-        uint96 _nuInTStake
-    )
-        external
-    {
-        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
-        info.tStake = _tStake;
-        info.keepInTStake = _keepInTStake;
-        info.nuInTStake = _nuInTStake;
+    function setAuthorized(address _stakingProviderrator, uint96 _authorized) external {
+        stakingProviderInfo[_stakingProvider].authorized = _authorized;
+    }
+
+    function setDecreaseRequest(address _stakingProvideror, uint96 _decreaseRequestTo) external {
+        stakingProviderInfo[_stakingProvider].decreaseRequestTo = _decreaseRequestTo;
     }
 
     function authorizedStake(address _stakingProvider, address _application) external view returns (uint96) {
-        return 0;
-    }
-
-    function stakes(address _stakingProvider) external view returns (
-        uint96 tStake,
-        uint96 keepInTStake,
-        uint96 nuInTStake
-    ) {
-        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
-        tStake = info.tStake;
-        keepInTStake = info.keepInTStake;
-        nuInTStake = info.nuInTStake;
+        require(_stakingProvider == _application || _application == address(preApplication));
+        return stakingProviderInfo[_stakingProvider].authorized;
     }
 
     function rolesOf(address _stakingProvider) external view returns (
@@ -112,7 +92,9 @@ contract ThresholdStakingForPREApplicationMock {
     }
 
     function approveAuthorizationDecrease(address _stakingProvider) external returns (uint96) {
-
+        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
+        info.authorized = info.decreaseRequestTo;
+        return info.authorized;
     }
 
     function seize(
@@ -126,16 +108,29 @@ contract ThresholdStakingForPREApplicationMock {
 
     function authorizationIncreased(address _stakingProvider, uint96 _fromAmount, uint96 _toAmount) external {
         preApplication.authorizationIncreased(_stakingProvider, _fromAmount, _toAmount);
+        stakingProviderInfo[_stakingProvider].authorized = _toAmount;
     }
 
     function involuntaryAuthorizationDecrease(
-        address _operator,
+        address _stakingProvider,
         uint96 _fromAmount,
         uint96 _toAmount
     )
         external
     {
-        preApplication.involuntaryAuthorizationDecrease(_operator, _fromAmount, _toAmount);
+        preApplication.involuntaryAuthorizationDecrease(_stakingProvider, _fromAmount, _toAmount);
+        stakingProviderInfo[_stakingProvider].authorized = _toAmount;
+    }
+
+    function authorizationDecreaseRequested(
+        address _stakingProvider,
+        uint96 _fromAmount,
+        uint96 _toAmount
+    )
+        external
+    {
+        preApplication.authorizationDecreaseRequested(_stakingProvider, _fromAmount, _toAmount);
+        stakingProviderInfo[_stakingProvider].decreaseRequestTo = _toAmount;
     }
 
 }

@@ -63,15 +63,18 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     /**
     * @notice Signals that authorization decrease was approved for the operator
     * @param operator Operator address
-    * @param amount Amount of decreased authorization
+    * @param fromAmount Previous amount of authorized tokens
+    * @param toAmount Decreased amount of authorized tokens
     */
-    event AuthorizationDecreaseApproved(address indexed operator, uint96 amount);
+    event AuthorizationDecreaseApproved(address indexed operator, uint96 fromAmount, uint96 toAmount);
 
     /**
     * @notice Signals that authorization was resynchronized
     * @param operator Operator address
+    * @param fromAmount Previous amount of authorized tokens
+    * @param toAmount Resynchronized amount of authorized tokens
     */
-    event AuthorizationReSynchronized(address indexed operator);
+    event AuthorizationReSynchronized(address indexed operator, uint96 fromAmount, uint96 toAmount);
 
     /**
     * @notice Signals that the operator was slashed
@@ -106,7 +109,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
         uint96 tReward;
         uint96 rewardPerTokenPaid;
 
-        uint96 deauthorizing;
+        uint96 deauthorizing; // TODO real usage only in getActiveOperators, maybe remove?
         uint256 endDeauthorization;
     }
 
@@ -354,6 +357,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
         emit AuthorizationInvoluntaryDecreased(_operator, _fromAmount, _toAmount);
 
         if (info.authorized == 0) {
+            _operatorFromWorker[info.worker] = address(0);
             info.worker = address(0);
             info.workerConfirmed == false;
         }
@@ -390,22 +394,24 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     function finishAuthorizationDecrease(address _operator) external updateReward(_operator) {
         OperatorInfo storage info = operatorInfo[_operator];
         require(info.deauthorizing > 0, "There is no deauthorizing in process");
-        require(info.endDeauthorization >= block.timestamp, "Authorization decrease has not finished yet");
+        require(info.endDeauthorization <= block.timestamp, "Authorization decrease has not finished yet");
 
-        emit AuthorizationDecreaseApproved(_operator, info.deauthorizing);
-        info.authorized -= info.deauthorizing;
+        uint96 toAmount = tStaking.approveAuthorizationDecrease(_operator);
+
         if (info.workerConfirmed) {
-            authorizedOverall -= info.deauthorizing;
+            authorizedOverall -= info.authorized - toAmount;
         }
+
+        emit AuthorizationDecreaseApproved(_operator, info.authorized, toAmount);
+        info.authorized = toAmount;
         info.deauthorizing = 0;
         info.endDeauthorization = 0;
 
         if (info.authorized == 0) {
+            _operatorFromWorker[info.worker] = address(0);
             info.worker = address(0);
             info.workerConfirmed == false;
         }
-
-        tStaking.approveAuthorizationDecrease(_operator);
     }
 
     /**
@@ -414,16 +420,24 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     */
     function resynchronizeAuthorization(address _operator) external updateReward(_operator) {
         OperatorInfo storage info = operatorInfo[_operator];
-        uint96 authorized = tStaking.authorizedStake(_operator, address(this));
-        require(info.authorized < authorized, "Nothing to synchronize");
+        uint96 newAuthorized = tStaking.authorizedStake(_operator, address(this));
+        require(info.authorized > newAuthorized, "Nothing to synchronize");
+
         if (info.workerConfirmed) {
-            authorizedOverall -= authorized - info.authorized;
+            authorizedOverall -= info.authorized - newAuthorized;
         }
-        info.authorized = authorized;
+        emit AuthorizationReSynchronized(_operator, info.authorized, newAuthorized);
+
+        info.authorized = newAuthorized;
         if (info.authorized < info.deauthorizing) {
-            info.deauthorizing = info.authorized; // TODO ideally resync this too
+            info.deauthorizing = info.authorized;
         }
-        emit AuthorizationReSynchronized(_operator);
+
+        if (info.authorized == 0) {
+            _operatorFromWorker[info.worker] = address(0);
+            info.worker = address(0);
+            info.workerConfirmed == false;
+        }
     }
 
     //-------------------------Main-------------------------
