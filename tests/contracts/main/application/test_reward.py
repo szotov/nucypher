@@ -177,3 +177,195 @@ def test_push_reward(testerchain, token, threshold_staking, pre_application, tok
     testerchain.time_travel(seconds=reward_duration)
     assert abs(pre_application.functions.earned(operator1).call() - (reward + reward_portion)) < ERROR
     assert pre_application.functions.earned(operator2).call() == 0
+
+
+def test_update_reward(testerchain, token, threshold_staking, pre_application, token_economics):
+    creator, distributor, operator1, operator2, *everyone_else = testerchain.client.accounts
+    min_authorization = token_economics.minimum_allowed_locked
+    reward_portion = min_authorization
+    reward_duration = 60 * 60
+    deauthorization_duration = 60 * 60
+    min_worker_seconds = 24 * 60 * 60
+    value = int(1.5 * min_authorization)
+
+    reward_per_token = 0
+    new_reward_per_token = 0
+    operator1_reward = 0
+    operator1_new_reward = 0
+    operator2_reward = 0
+    operator2_new_reward = 0
+
+    def check_reward_no_confirmation():
+        nonlocal reward_per_token, new_reward_per_token, operator1_reward, operator1_new_reward
+
+        new_reward_per_token = pre_application.functions.rewardPerToken().call()
+        assert new_reward_per_token > reward_per_token
+        assert pre_application.functions.rewardPerTokenStored().call() == new_reward_per_token
+        operator1_new_reward = pre_application.functions.earned(operator1).call()
+        assert operator1_new_reward > operator1_reward
+        assert pre_application.functions.operatorInfo(operator1).call()[REWARDS_SLOT] == 0
+        assert pre_application.functions.operatorInfo(operator1).call()[REWARDS_PAID_SLOT] == 0
+        assert pre_application.functions.earned(operator2).call() == 0
+        assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_SLOT] == 0
+        assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_PAID_SLOT] == new_reward_per_token
+        reward_per_token = new_reward_per_token
+        operator1_reward = operator1_new_reward
+
+    def check_reward_with_confirmation():
+        nonlocal reward_per_token, \
+                 new_reward_per_token, \
+                 operator1_reward, \
+                 operator1_new_reward, \
+                 operator2_reward, \
+                 operator2_new_reward
+
+        new_reward_per_token = pre_application.functions.rewardPerToken().call()
+        assert new_reward_per_token > reward_per_token
+        assert pre_application.functions.rewardPerTokenStored().call() == new_reward_per_token
+        operator1_new_reward = pre_application.functions.earned(operator1).call()
+        assert operator1_new_reward > operator1_reward
+        assert pre_application.functions.operatorInfo(operator1).call()[REWARDS_SLOT] == 0
+        assert pre_application.functions.operatorInfo(operator1).call()[REWARDS_PAID_SLOT] == 0
+        operator2_new_reward = pre_application.functions.earned(operator2).call()
+        assert operator2_new_reward > operator2_reward
+        assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_SLOT] == operator2_new_reward
+        assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_PAID_SLOT] == new_reward_per_token
+        reward_per_token = new_reward_per_token
+        operator1_reward = operator1_new_reward
+        operator2_reward = operator2_new_reward
+
+    # Prepare one operator and reward
+    tx = threshold_staking.functions.authorizationIncreased(operator1, 0, value).transact()
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.bondWorker(operator1).transact({'from': operator1})
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator1})
+    testerchain.wait_for_receipt(tx)
+
+    tx = pre_application.functions.setRewardDistributor(distributor).transact({'from': creator})
+    testerchain.wait_for_receipt(tx)
+    tx = token.functions.transfer(distributor, 100 * reward_portion).transact({'from': creator})
+    testerchain.wait_for_receipt(tx)
+    tx = token.functions.approve(pre_application.address, 100 * reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.pushReward(2 * reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    assert pre_application.functions.rewardPerTokenStored().call() == 0
+    assert pre_application.functions.rewardPerToken().call() == 0
+    assert pre_application.functions.earned(operator1).call() == 0
+
+    testerchain.time_travel(seconds=reward_duration // 2)
+    # Reward per token will be updated but nothing earned yet
+    tx = threshold_staking.functions.authorizationIncreased(operator2, 0, 4 * value).transact()
+    testerchain.wait_for_receipt(tx)
+    check_reward_no_confirmation()
+
+    # Add reward, wait and bond worker
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    # Reward per token will be updated but nothing earned yet (need confirmation)
+    tx = pre_application.functions.bondWorker(operator2).transact({'from': operator2})
+    testerchain.wait_for_receipt(tx)
+    check_reward_no_confirmation()
+
+    # Involuntary decrease without confirmation
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    tx = threshold_staking.functions.involuntaryAuthorizationDecrease(operator2, 4 * value, 3 * value).transact()
+    testerchain.wait_for_receipt(tx)
+    check_reward_no_confirmation()
+
+    # Request for decrease
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    tx = threshold_staking.functions.authorizationDecreaseRequested(operator2, 3 * value, 2 * value).transact()
+    testerchain.wait_for_receipt(tx)
+    assert pre_application.functions.earned(operator2).call() == 0
+    assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_SLOT] == 0
+    assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_PAID_SLOT] == reward_per_token
+
+    # Finish decrease without confirmation
+    testerchain.time_travel(seconds=deauthorization_duration)
+    tx = pre_application.functions.finishAuthorizationDecrease(operator2).transact()
+    testerchain.wait_for_receipt(tx)
+    check_reward_no_confirmation()
+
+    # Resync without confirmation
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    tx = threshold_staking.functions.setAuthorized(operator2, value).transact()
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.resynchronizeAuthorization(operator2).transact()
+    testerchain.wait_for_receipt(tx)
+    check_reward_no_confirmation()
+
+    # Wait and confirm worker
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    # Reward per token will be updated but nothing earned yet (just confirmed worker)
+    tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator2})
+    testerchain.wait_for_receipt(tx)
+    check_reward_no_confirmation()
+
+    # Increase authorization with confirmation
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    tx = threshold_staking.functions.authorizationIncreased(operator2, value, 4 * value).transact()
+    testerchain.wait_for_receipt(tx)
+    check_reward_with_confirmation()
+
+    # Involuntary decrease with confirmation
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    tx = threshold_staking.functions.involuntaryAuthorizationDecrease(operator2, 4 * value, 3 * value).transact()
+    testerchain.wait_for_receipt(tx)
+    check_reward_with_confirmation()
+
+    # Request for decrease
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    tx = threshold_staking.functions.authorizationDecreaseRequested(operator2, 3 * value, 2 * value).transact()
+    testerchain.wait_for_receipt(tx)
+    assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_SLOT] == operator2_reward
+    assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_PAID_SLOT] == reward_per_token
+
+    # Finish decrease with confirmation
+    testerchain.time_travel(seconds=deauthorization_duration)
+    tx = pre_application.functions.finishAuthorizationDecrease(operator2).transact()
+    testerchain.wait_for_receipt(tx)
+    check_reward_with_confirmation()
+
+    # Resync with confirmation
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    tx = threshold_staking.functions.setAuthorized(operator2, value).transact()
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.resynchronizeAuthorization(operator2).transact()
+    testerchain.wait_for_receipt(tx)
+    check_reward_with_confirmation()
+
+    # Bond worker with confirmation (confirmation will be dropped)
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=min_worker_seconds)
+    # Reward per token will be updated but nothing earned yet (need confirmation)
+    tx = pre_application.functions.bondWorker(everyone_else[0]).transact({'from': operator2})
+    testerchain.wait_for_receipt(tx)
+    check_reward_with_confirmation()
+
+    # Push reward wait some time and check that no more reward
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration)
+    assert pre_application.functions.earned(operator2).call() == operator2_reward
+    assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_SLOT] == operator2_reward
+    assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_PAID_SLOT] == reward_per_token
