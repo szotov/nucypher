@@ -23,6 +23,12 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     using SafeCast for uint256;
 
     /**
+    * @notice Signals that distributor role was set
+    * @param distributor Address of reward distributor
+    */
+    event RewardDistributorSet(address indexed distributor);
+
+    /**
     * @notice Signals that reward was added
     * @param reward Amount of reward
     */
@@ -214,6 +220,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
         onlyOwner
     {
         rewardDistributor = _rewardDistributor;
+        emit RewardDistributorSet(_rewardDistributor);
     }
 
     /**
@@ -261,7 +268,11 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
         if (!info.workerConfirmed) {
             return info.tReward;
         }
-        return info.authorized * (rewardPerToken() - info.rewardPerTokenPaid) / 1e18 + info.tReward;
+        uint256 result = uint256(info.authorized) *
+                (rewardPerToken() - info.rewardPerTokenPaid)
+                / 1e18
+                + info.tReward;
+        return result.toUint96();
     }
 
     /**
@@ -281,7 +292,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
         lastUpdateTime = block.timestamp;
         periodFinish = block.timestamp + rewardDuration;
         emit RewardAdded(_reward);
-        token.safeTransfer(msg.sender, _reward);
+        token.safeTransferFrom(msg.sender, address(this), _reward);
     }
 
     /**
