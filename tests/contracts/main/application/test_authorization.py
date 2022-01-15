@@ -96,7 +96,7 @@ def test_authorization_increase(testerchain, threshold_staking, pre_application,
     assert event_args['toAmount'] == value
 
     # Confirm worker address and try to increase authorization again
-    tx = pre_application.functions.bondWorker(operator).transact({'from': operator})
+    tx = pre_application.functions.bondWorker(operator, operator).transact({'from': operator})
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator})
     testerchain.wait_for_receipt(tx)
@@ -175,7 +175,7 @@ def test_involuntary_authorization_decrease(testerchain, threshold_staking, pre_
     assert event_args['toAmount'] == authorization
 
     # Confirm worker address and decrease again
-    tx = pre_application.functions.bondWorker(operator).transact({'from': operator})
+    tx = pre_application.functions.bondWorker(operator, operator).transact({'from': operator})
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator})
     testerchain.wait_for_receipt(tx)
@@ -271,7 +271,7 @@ def test_authorization_decrease_request(testerchain, threshold_staking, pre_appl
     assert event_args['toAmount'] == minimum_authorization
 
     # Confirm worker address and request full decrease
-    tx = pre_application.functions.bondWorker(operator).transact({'from': operator})
+    tx = pre_application.functions.bondWorker(operator, operator).transact({'from': operator})
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator})
     testerchain.wait_for_receipt(tx)
@@ -346,7 +346,7 @@ def test_finish_authorization_decrease(testerchain, threshold_staking, pre_appli
 
     # Confirm worker, request again then desync values and finish decrease
     value = new_value
-    tx = pre_application.functions.bondWorker(operator).transact({'from': operator})
+    tx = pre_application.functions.bondWorker(operator, operator).transact({'from': operator})
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator})
     testerchain.wait_for_receipt(tx)
@@ -450,7 +450,7 @@ def test_resync(testerchain, threshold_staking, pre_application, token_economics
 
     # Confirm worker and change authorized amount again
     value = new_value
-    tx = pre_application.functions.bondWorker(operator).transact({'from': operator})
+    tx = pre_application.functions.bondWorker(operator, operator).transact({'from': operator})
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator})
     testerchain.wait_for_receipt(tx)

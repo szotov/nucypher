@@ -202,11 +202,15 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     }
 
     /**
-    * @dev Checks the existence of an operator in the contract
+    * @dev Checks caller is an operator or stake owner
     */
-    modifier onlyOperator()
+    modifier onlyOwnerOrOperator(address _operator)
     {
-        require(isAuthorized(msg.sender), "Caller is not the operator");
+        require(isAuthorized(_operator), "Not owner or operator");
+        if (_operator != msg.sender) {
+            (address owner,,) = tStaking.rolesOf(_operator);
+            require(owner == msg.sender, "Not owner or operator");
+        }
         _;
     }
 
@@ -300,7 +304,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
     * @param _operator Operator address
     */
     function withdraw(address _operator) external updateReward(_operator) {
-        (, address beneficiary,) = tStaking.rolesOf(_operator);
+        address beneficiary = getBeneficiary(_operator);
         require(msg.sender == beneficiary, "Caller must be beneficiary");
 
         OperatorInfo storage info = operatorInfo[_operator];
@@ -542,10 +546,13 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
 
     /**
     * @notice Bond worker
+    * @param _operator Operator address
     * @param _worker Worker address. Must be a real address, not a contract
     */
-    function bondWorker(address _worker) external onlyOperator updateReward(msg.sender) {
-        OperatorInfo storage info = operatorInfo[msg.sender];
+    function bondWorker(address _operator, address _worker)
+        external onlyOwnerOrOperator(_operator) updateReward(_operator)
+    {
+        OperatorInfo storage info = operatorInfo[_operator];
         require(_worker != info.worker, "Specified worker is already bonded with this operator");
         // If this staker had a worker ...
         if (info.worker != address(0)) {
@@ -560,15 +567,15 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
         if (_worker != address(0)) {
             require(_operatorFromWorker[_worker] == address(0), "Specified worker is already in use");
             require(
-                _worker == msg.sender || getBeneficiary(_worker) == address(0),
+                _worker == _operator || getBeneficiary(_worker) == address(0),
                 "Specified worker is an operator"
             );
             // Set new worker->operator relation
-            _operatorFromWorker[_worker] = msg.sender;
+            _operatorFromWorker[_worker] = _operator;
         }
 
         if (info.workerStartTimestamp == 0) {
-            operators.push(msg.sender);
+            operators.push(_operator);
         }
 
         if (info.workerConfirmed) {
@@ -579,7 +586,7 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
         info.worker = _worker;
         info.workerStartTimestamp = block.timestamp;
         info.workerConfirmed = false;
-        emit WorkerBonded(msg.sender, _worker, block.timestamp);
+        emit WorkerBonded(_operator, _worker, block.timestamp);
     }
 
     /**

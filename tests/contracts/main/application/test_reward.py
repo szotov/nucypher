@@ -112,7 +112,7 @@ def test_push_reward(testerchain, token, threshold_staking, pre_application, tok
     testerchain.time_travel(seconds=reward_duration)
     tx = threshold_staking.functions.authorizationIncreased(operator1, 0, value).transact()
     testerchain.wait_for_receipt(tx)
-    tx = pre_application.functions.bondWorker(operator1).transact({'from': operator1})
+    tx = pre_application.functions.bondWorker(operator1, operator1).transact({'from': operator1})
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator1})
     testerchain.wait_for_receipt(tx)
@@ -237,7 +237,7 @@ def test_update_reward(testerchain, token, threshold_staking, pre_application, t
     # Prepare one operator and reward
     tx = threshold_staking.functions.authorizationIncreased(operator1, 0, value).transact()
     testerchain.wait_for_receipt(tx)
-    tx = pre_application.functions.bondWorker(operator1).transact({'from': operator1})
+    tx = pre_application.functions.bondWorker(operator1, operator1).transact({'from': operator1})
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator1})
     testerchain.wait_for_receipt(tx)
@@ -265,7 +265,7 @@ def test_update_reward(testerchain, token, threshold_staking, pre_application, t
     testerchain.wait_for_receipt(tx)
     testerchain.time_travel(seconds=reward_duration // 2)
     # Reward per token will be updated but nothing earned yet (need confirmation)
-    tx = pre_application.functions.bondWorker(operator2).transact({'from': operator2})
+    tx = pre_application.functions.bondWorker(operator2, operator2).transact({'from': operator2})
     testerchain.wait_for_receipt(tx)
     check_reward_no_confirmation()
 
@@ -358,7 +358,7 @@ def test_update_reward(testerchain, token, threshold_staking, pre_application, t
     testerchain.wait_for_receipt(tx)
     testerchain.time_travel(seconds=min_worker_seconds)
     # Reward per token will be updated but nothing earned yet (need confirmation)
-    tx = pre_application.functions.bondWorker(everyone_else[0]).transact({'from': operator2})
+    tx = pre_application.functions.bondWorker(operator2, everyone_else[0]).transact({'from': operator2})
     testerchain.wait_for_receipt(tx)
     check_reward_with_confirmation()
 
