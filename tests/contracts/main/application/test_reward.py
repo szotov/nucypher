@@ -369,3 +369,114 @@ def test_update_reward(testerchain, token, threshold_staking, pre_application, t
     assert pre_application.functions.earned(operator2).call() == operator2_reward
     assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_SLOT] == operator2_reward
     assert pre_application.functions.operatorInfo(operator2).call()[REWARDS_PAID_SLOT] == reward_per_token
+
+
+def test_withdraw(testerchain, token, threshold_staking, pre_application, token_economics):
+    creator, distributor, operator, owner, beneficiary, authorizer, operator2, \
+        *everyone_else = testerchain.client.accounts
+    min_authorization = token_economics.minimum_allowed_locked
+    reward_portion = min_authorization
+    reward_duration = 60 * 60
+    min_worker_seconds = 24 * 60 * 60
+    value = int(1.5 * min_authorization)
+
+    withdrawals_log = pre_application.events.RewardPaid.createFilter(fromBlock='latest')
+
+    # No rewards, no operators
+    tx = threshold_staking.functions.setRoles(operator, owner, beneficiary, authorizer).transact()
+    testerchain.wait_for_receipt(tx)
+    with pytest.raises((TransactionFailed, ValueError)):
+        tx = pre_application.functions.withdraw(operator).transact({'from': beneficiary})
+        testerchain.wait_for_receipt(tx)
+
+    # Prepare one operator and reward
+    tx = threshold_staking.functions.authorizationIncreased(operator, 0, value).transact()
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.bondWorker(operator, operator).transact({'from': operator})
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator})
+    testerchain.wait_for_receipt(tx)
+
+    # Nothing earned yet
+    with pytest.raises((TransactionFailed, ValueError)):
+        tx = pre_application.functions.withdraw(operator).transact({'from': beneficiary})
+        testerchain.wait_for_receipt(tx)
+
+    tx = pre_application.functions.setRewardDistributor(distributor).transact({'from': creator})
+    testerchain.wait_for_receipt(tx)
+    tx = token.functions.transfer(distributor, 100 * reward_portion).transact({'from': creator})
+    testerchain.wait_for_receipt(tx)
+    tx = token.functions.approve(pre_application.address, 100 * reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    assert pre_application.functions.rewardPerTokenStored().call() == 0
+    assert pre_application.functions.rewardPerToken().call() == 0
+    assert pre_application.functions.earned(operator).call() == 0
+
+    testerchain.time_travel(seconds=reward_duration)
+    # Only beneficiary can withdraw reward
+    with pytest.raises((TransactionFailed, ValueError)):
+        tx = pre_application.functions.withdraw(operator).transact({'from': owner})
+        testerchain.wait_for_receipt(tx)
+    with pytest.raises((TransactionFailed, ValueError)):
+        tx = pre_application.functions.withdraw(operator).transact({'from': authorizer})
+        testerchain.wait_for_receipt(tx)
+
+    reward_per_token = pre_application.functions.rewardPerToken().call()
+    assert reward_per_token > 0
+    earned = pre_application.functions.earned(operator).call()
+    assert earned > 0
+
+    tx = pre_application.functions.withdraw(operator).transact({'from': beneficiary})
+    testerchain.wait_for_receipt(tx)
+    assert pre_application.functions.rewardPerTokenStored().call() == reward_per_token
+    assert pre_application.functions.operatorInfo(operator).call()[REWARDS_SLOT] == 0
+    assert pre_application.functions.operatorInfo(operator).call()[REWARDS_PAID_SLOT] == reward_per_token
+    assert token.functions.balanceOf(beneficiary).call() == earned
+    assert token.functions.balanceOf(pre_application.address).call() == reward_portion - earned
+
+    events = withdrawals_log.get_all_entries()
+    assert len(events) == 1
+    event_args = events[-1]['args']
+    assert event_args['operator'] == operator
+    assert event_args['beneficiary'] == beneficiary
+    assert event_args['reward'] == earned
+
+    # Add one more operator, push reward again and drop worker
+    testerchain.time_travel(seconds=min_worker_seconds)
+    tx = threshold_staking.functions.setRoles(operator2).transact()
+    testerchain.wait_for_receipt(tx)
+    tx = threshold_staking.functions.authorizationIncreased(operator2, 0, value).transact()
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.bondWorker(operator2, operator2).transact({'from': operator2})
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.confirmWorkerAddress().transact({'from': operator2})
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
+    testerchain.wait_for_receipt(tx)
+    testerchain.time_travel(seconds=reward_duration // 2)
+    tx = pre_application.functions.bondWorker(operator, NULL_ADDRESS).transact({'from': operator})
+    testerchain.wait_for_receipt(tx)
+
+    new_earned = pre_application.functions.earned(operator).call()
+    assert pre_application.functions.operatorInfo(operator).call()[REWARDS_SLOT] == new_earned
+
+    # Withdraw
+    testerchain.time_travel(seconds=reward_duration // 2)
+    assert pre_application.functions.earned(operator).call() == new_earned
+    tx = pre_application.functions.withdraw(operator).transact({'from': beneficiary})
+    testerchain.wait_for_receipt(tx)
+    new_reward_per_token = pre_application.functions.rewardPerToken().call()
+    assert pre_application.functions.rewardPerTokenStored().call() == new_reward_per_token
+    assert pre_application.functions.operatorInfo(operator).call()[REWARDS_SLOT] == 0
+    assert pre_application.functions.operatorInfo(operator).call()[REWARDS_PAID_SLOT] == new_reward_per_token
+    assert token.functions.balanceOf(beneficiary).call() == earned + new_earned
+    assert token.functions.balanceOf(pre_application.address).call() == 2 * reward_portion - earned - new_earned
+
+    events = withdrawals_log.get_all_entries()
+    assert len(events) == 2
+    event_args = events[-1]['args']
+    assert event_args['operator'] == operator
+    assert event_args['beneficiary'] == beneficiary
+    assert event_args['reward'] == new_earned
