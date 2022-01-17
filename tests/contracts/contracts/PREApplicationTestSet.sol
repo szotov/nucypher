@@ -37,6 +37,11 @@ contract ThresholdStakingForPREApplicationMock {
 
     mapping (address => StakingProviderInfo) public stakingProviderInfo;
 
+    uint96 public amountToSeize;
+    uint256 public rewardMultiplier;
+    address public notifier;
+    address[] public operatorsToSeize;
+
     function setApplication(PREApplication _preApplication) external {
         preApplication = _preApplication;
     }
@@ -99,11 +104,18 @@ contract ThresholdStakingForPREApplicationMock {
 
     function seize(
         uint96 _amount,
-        uint256 _rewardMultipier,
+        uint256 _rewardMultiplier,
         address _notifier,
         address[] memory _stakingProviders
     ) external {
+        amountToSeize = _amount;
+        rewardMultiplier = _rewardMultiplier;
+        notifier = _notifier;
+        operatorsToSeize = _operators;
+    }
 
+    function getLengthOfOperatorsToSeize() external view returns (uint256) {
+        return operatorsToSeize.length;
     }
 
     function authorizationIncreased(address _stakingProvider, uint96 _fromAmount, uint96 _toAmount) external {
@@ -153,6 +165,49 @@ contract Intermediary {
 
     function confirmOperatorAddress() external {
         preApplication.confirmOperatorAddress();
+    }
+
+}
+
+
+/**
+* @notice Extended contract
+*/
+contract ExtendedPREApplication is PREApplication {
+
+    constructor(
+        SignatureVerifier.HashAlgorithm _hashAlgorithm,
+        uint256 _basePenalty,
+        uint256 _penaltyHistoryCoefficient,
+        uint256 _percentagePenaltyCoefficient,
+        IERC20 _token,
+        IStaking _tStaking,
+        uint256 _rewardDuration,
+        uint256 _deauthorizationDuration,
+        uint256 _minAuthorization,
+        uint256 _minWorkerSeconds
+    )
+        PREApplication(
+            _hashAlgorithm,
+            _basePenalty,
+            _penaltyHistoryCoefficient,
+            _percentagePenaltyCoefficient,
+            _token,
+            _tStaking,
+            _rewardDuration,
+            _deauthorizationDuration,
+            _minAuthorization,
+            _minWorkerSeconds
+        )
+    {
+    }
+
+    function testSlash(
+        address _operator,
+        uint96 _penalty,
+        address _investigator
+    ) external {
+        slash(_operator, _penalty, _investigator);
     }
 
 }

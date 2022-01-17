@@ -46,7 +46,7 @@ def pre_application(testerchain, token, threshold_staking, deploy_contract, appl
     deauthorization_duration = 60 * 60
     # Creator deploys the PRE application
     contract, _ = deploy_contract(
-        'PREApplication',
+        'ExtendedPREApplication',
         *token_economics.slashing_deployment_parameters,
         token.address,
         threshold_staking.address,
