@@ -7,7 +7,7 @@ import "zeppelin/math/Math.sol";
 import "zeppelin/math/SafeCast.sol";
 import "zeppelin/token/ERC20/SafeERC20.sol";
 import "zeppelin/token/ERC20/IERC20.sol";
-import "zeppelin/ownership/Ownable.sol";
+import "zeppelin/access/OwnableUpgradeable.sol";
 import "threshold/IApplication.sol";
 import "threshold/IStaking.sol";
 import "contracts/Adjudicator.sol";
@@ -17,7 +17,7 @@ import "contracts/Adjudicator.sol";
 * @title PRE Application
 * @notice Contract distributes rewards for participating in app and slashes for violating rules
 */
-contract PREApplication is IApplication, Adjudicator, Ownable {
+contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
 
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -212,6 +212,13 @@ contract PREApplication is IApplication, Adjudicator, Ownable {
             require(owner == msg.sender, "Not owner or operator");
         }
         _;
+    }
+
+    /**
+     * @notice Initialize function for using with OpenZeppelin proxy
+     */
+    function initialize() external initializer {
+        __Ownable_init();
     }
 
     //------------------------Reward------------------------------

@@ -56,6 +56,8 @@ def pre_application(testerchain, token, threshold_staking, deploy_contract, appl
         min_operator_seconds
     )
 
+    tx = contract.functions.initialize().transact()
+    testerchain.wait_for_receipt(tx)
     tx = threshold_staking.functions.setApplication(contract.address).transact()
     testerchain.wait_for_receipt(tx)
 

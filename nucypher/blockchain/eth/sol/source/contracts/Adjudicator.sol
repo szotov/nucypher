@@ -41,7 +41,7 @@ abstract contract Adjudicator {
     mapping (address => uint256) public penaltyHistory;
     mapping (bytes32 => bool) public evaluatedCFrags;
 
-    // TODO add slots
+    uint256[50] private reservedSlots;
 
     /**
     * @param _hashAlgorithm Hashing algorithm
@@ -197,22 +197,5 @@ abstract contract Adjudicator {
         uint96 _penalty,
         address _investigator
     ) internal virtual;
-
-//    function verifyAdjudicatorState(address _testTarget) public virtual {
-//        bytes32 evaluationCFragHash = SignatureVerifier.hash(
-//            abi.encodePacked(RESERVED_CAPSULE_AND_CFRAG_BYTES), SignatureVerifier.HashAlgorithm.SHA256);
-//        require(Getters.delegateGet(_testTarget, this.evaluatedCFrags.selector, evaluationCFragHash) ==
-//            (evaluatedCFrags[evaluationCFragHash] ? 1 : 0));
-//        require(Getters.delegateGet(_testTarget, this.penaltyHistory.selector, bytes32(bytes20(RESERVED_ADDRESS))) ==
-//            penaltyHistory[RESERVED_ADDRESS]);
-//    }
-//
-//    function finishAdjudicatorUpgrade(address _target) public virtual {
-//        // preparation for the verifyState method
-//        bytes32 evaluationCFragHash = SignatureVerifier.hash(
-//            abi.encodePacked(RESERVED_CAPSULE_AND_CFRAG_BYTES), SignatureVerifier.HashAlgorithm.SHA256);
-//        evaluatedCFrags[evaluationCFragHash] = true;
-//        penaltyHistory[RESERVED_ADDRESS] = 123;
-//    }
 
 }
