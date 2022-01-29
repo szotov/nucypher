@@ -10,7 +10,7 @@ import "zeppelin/math/SafeCast.sol";
 
 /**
 * @title Adjudicator
-* @notice Supervises workers' behavior and punishes when something's wrong.
+* @notice Supervises operators' behavior and punishes when something's wrong.
 * @dev |v3.1.1|
 */
 abstract contract Adjudicator {
@@ -25,8 +25,8 @@ abstract contract Adjudicator {
     );
     event IncorrectCFragVerdict(
         bytes32 indexed evaluationHash,
-        address indexed worker,
-        address indexed operator
+        address indexed operator,
+        address indexed stakingProvider
     );
 
     // used only for upgrading
@@ -63,14 +63,14 @@ abstract contract Adjudicator {
     }
 
     /**
-    * @notice Submit proof that a worker created wrong CFrag
+    * @notice Submit proof that a operator created wrong CFrag
     * @param _capsuleBytes Serialized capsule
     * @param _cFragBytes Serialized CFrag
-    * @param _cFragSignature Signature of CFrag by worker
+    * @param _cFragSignature Signature of CFrag by operator
     * @param _taskSignature Signature of task specification by Bob
     * @param _requesterPublicKey Bob's signing public key, also known as "stamp"
-    * @param _workerPublicKey Worker's signing public key, also known as "stamp"
-    * @param _workerIdentityEvidence Signature of worker's public key by worker's eth-key
+    * @param _operatorPublicKey Operator's signing public key, also known as "stamp"
+    * @param _operatorIdentityEvidence Signature of operator's public key by operator's eth-key
     * @param _preComputedData Additional pre-computed data for CFrag correctness verification
     */
     function evaluateCFrag(
@@ -79,8 +79,8 @@ abstract contract Adjudicator {
         bytes memory _cFragSignature,
         bytes memory _taskSignature,
         bytes memory _requesterPublicKey,
-        bytes memory _workerPublicKey,
-        bytes memory _workerIdentityEvidence,
+        bytes memory _operatorPublicKey,
+        bytes memory _operatorIdentityEvidence,
         bytes memory _preComputedData
     )
         public
@@ -96,28 +96,28 @@ abstract contract Adjudicator {
         emit CFragEvaluated(evaluationHash, msg.sender, cFragIsCorrect);
 
         // 3. Verify associated public keys and signatures
-        require(ReEncryptionValidator.checkSerializedCoordinates(_workerPublicKey),
+        require(ReEncryptionValidator.checkSerializedCoordinates(_operatorPublicKey),
                 "Staker's public key is invalid");
         require(ReEncryptionValidator.checkSerializedCoordinates(_requesterPublicKey),
                 "Requester's public key is invalid");
 
         UmbralDeserializer.PreComputedData memory precomp = _preComputedData.toPreComputedData();
 
-        // Verify worker's signature of CFrag
+        // Verify operator's signature of CFrag
         require(SignatureVerifier.verify(
                 _cFragBytes,
                 abi.encodePacked(_cFragSignature, precomp.lostBytes[1]),
-                _workerPublicKey,
+                _operatorPublicKey,
                 hashAlgorithm),
                 "CFrag signature is invalid"
         );
 
-        // Verify worker's signature of taskSignature and that it corresponds to cfrag.proof.metadata
+        // Verify operator's signature of taskSignature and that it corresponds to cfrag.proof.metadata
         UmbralDeserializer.CapsuleFrag memory cFrag = _cFragBytes.toCapsuleFrag();
         require(SignatureVerifier.verify(
                 _taskSignature,
                 abi.encodePacked(cFrag.proof.metadata, precomp.lostBytes[2]),
-                _workerPublicKey,
+                _operatorPublicKey,
                 hashAlgorithm),
                 "Task signature is invalid"
         );
@@ -126,14 +126,14 @@ abstract contract Adjudicator {
         // A task specification is: capsule + ursula pubkey + alice address + blockhash
         bytes32 stampXCoord;
         assembly {
-            stampXCoord := mload(add(_workerPublicKey, 32))
+            stampXCoord := mload(add(_operatorPublicKey, 32))
         }
         bytes memory stamp = abi.encodePacked(precomp.lostBytes[4], stampXCoord);
 
         require(SignatureVerifier.verify(
                 abi.encodePacked(_capsuleBytes,
                                  stamp,
-                                 _workerIdentityEvidence,
+                                 _operatorIdentityEvidence,
                                  precomp.alicesKeyAsAddress,
                                  bytes32(0)),
                 abi.encodePacked(_taskSignature, precomp.lostBytes[3]),
@@ -142,58 +142,58 @@ abstract contract Adjudicator {
                 "Specification signature is invalid"
         );
 
-        // 4. Extract worker address from stamp signature.
-        address worker = SignatureVerifier.recover(
+        // 4. Extract operator address from stamp signature.
+        address operator = SignatureVerifier.recover(
             SignatureVerifier.hashEIP191(stamp, bytes1(0x45)), // Currently, we use version E (0x45) of EIP191 signatures
-            _workerIdentityEvidence);
-        address operator = operatorFromWorker(worker);
-        require(operator != address(0), "Worker must be related to an operator");
+            _operatorIdentityEvidence);
+        address stakingProvider = stakingProviderFromOperator(operator);
+        require(stakingProvider != address(0), "Operator must be related to a provider");
 
-        // 5. Check that operator can be slashed
-        uint96 operatorValue = authorizedStake(operator);
-        require(operatorValue > 0, "Operator has no tokens");
+        // 5. Check that staking provider can be slashed
+        uint96 stakingProviderValue = authorizedStake(stakingProvider);
+        require(stakingProviderValue > 0, "Provider has no tokens");
 
-        // 6. If CFrag was incorrect, slash operator
+        // 6. If CFrag was incorrect, slash staking provider
         if (!cFragIsCorrect) {
-            uint96 penalty = calculatePenalty(operator, operatorValue);
-            slash(operator, penalty, msg.sender);
-            emit IncorrectCFragVerdict(evaluationHash, worker, operator);
+            uint96 penalty = calculatePenalty(stakingProvider, stakingProviderValue);
+            slash(stakingProvider, penalty, msg.sender);
+            emit IncorrectCFragVerdict(evaluationHash, operator, stakingProvider);
         }
     }
 
     /**
-    * @notice Calculate penalty to the operator
-    * @param _operator Operator's address
-    * @param _operatorValue Amount of tokens that belong to the operator
+    * @notice Calculate penalty to the staking provider
+    * @param _stakingProvider Staking provider address
+    * @param _stakingProviderValue Amount of tokens that belong to the staking provider
     */
-    function calculatePenalty(address _operator, uint96 _operatorValue)
+    function calculatePenalty(address _stakingProvider, uint96 _stakingProviderValue)
         internal returns (uint96)
     {
-        uint256 penalty = basePenalty + penaltyHistoryCoefficient * penaltyHistory[_operator];
-        penalty = Math.min(penalty, _operatorValue / percentagePenaltyCoefficient);
+        uint256 penalty = basePenalty + penaltyHistoryCoefficient * penaltyHistory[_stakingProvider];
+        penalty = Math.min(penalty, _stakingProviderValue / percentagePenaltyCoefficient);
         // TODO add maximum condition or other overflow protection or other penalty condition (#305?)
-        penaltyHistory[_operator] = penaltyHistory[_operator] + 1;
+        penaltyHistory[_stakingProvider] = penaltyHistory[_stakingProvider] + 1;
         return penalty.toUint96();
     }
 
     /**
-    * @notice Get all tokens delegated to the operator
+    * @notice Get all tokens delegated to the staking provider
     */
-    function authorizedStake(address _operator) public view virtual returns (uint96);
+    function authorizedStake(address _stakingProvider) public view virtual returns (uint96);
 
     /**
-    * @notice Get operator address bonded with specified worker address
+    * @notice Get staking provider address bonded with specified operator address
     */
-    function operatorFromWorker(address _worker) public view virtual returns (address);
+    function stakingProviderFromOperator(address _operator) public view virtual returns (address);
 
     /**
-    * @notice Slash the operator's stake and reward the investigator
-    * @param _operator Operator's address
+    * @notice Slash the provider's stake and reward the investigator
+    * @param _stakingProvider Staking provider address
     * @param _penalty Penalty
     * @param _investigator Investigator
     */
     function slash(
-        address _operator,
+        address _stakingProvider,
         uint96 _penalty,
         address _investigator
     ) internal virtual;

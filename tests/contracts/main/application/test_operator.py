@@ -33,23 +33,20 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
 
     operator_log = pre_application.events.OperatorBonded.createFilter(fromBlock='latest')
 
-    # Prepare staking providers: two with intermediary contract and two just a staking provider
+    # Prepare staking providers
     tx = threshold_staking.functions.setRoles(staking_provider_1).transact()
     testerchain.wait_for_receipt(tx)
-    tx = threshold_staking.functions.setStakes(staking_provider_1, min_authorization, 0, 0).transact()
+    tx = threshold_staking.functions.authorizationIncreased(staking_provider_1, 0, min_authorization).transact()
     testerchain.wait_for_receipt(tx)
     tx = threshold_staking.functions.setRoles(staking_provider_2).transact()
     testerchain.wait_for_receipt(tx)
-    tx = threshold_staking.functions.setStakes(
-        staking_provider_2, min_authorization // 3, min_authorization // 3, min_authorization // 3 - 1).transact()
-    testerchain.wait_for_receipt(tx)
     tx = threshold_staking.functions.setRoles(staking_provider_3, owner3, beneficiary, authorizer).transact()
     testerchain.wait_for_receipt(tx)
-    tx = threshold_staking.functions.setStakes(staking_provider_3, 0, min_authorization, 0).transact()
+    tx = threshold_staking.functions.authorizationIncreased(staking_provider_3, 0, min_authorization).transact()
     testerchain.wait_for_receipt(tx)
     tx = threshold_staking.functions.setRoles(staking_provider_4).transact()
     testerchain.wait_for_receipt(tx)
-    tx = threshold_staking.functions.setStakes(staking_provider_4, 0, 0, min_authorization).transact()
+    tx = threshold_staking.functions.authorizationIncreased(staking_provider_4, 0, min_authorization).transact()
     testerchain.wait_for_receipt(tx)
 
     assert pre_application.functions.getOperatorFromStakingProvider(staking_provider_1).call() == NULL_ADDRESS
@@ -127,15 +124,15 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
         tx = pre_application.functions.bondOperator(staking_provider_4, operator1).transact({'from': staking_provider_4})
         testerchain.wait_for_receipt(tx)
 
-    # # Operator can't be a staking provider
-    # tx = threshold_staking.functions.setRoles(operator1).transact()
-    # testerchain.wait_for_receipt(tx)
-    # tx = threshold_staking.functions.setStakes(operator1, min_authorization, 0, 0).transact()
-    # testerchain.wait_for_receipt(tx)
-    # with pytest.raises((TransactionFailed, ValueError)):
-    #     tx = threshold_staking.functions.increaseAuthorization(
-    #         operator1, min_authorization, pre_application.address).transact({'from': operator1})
-    #     testerchain.wait_for_receipt(tx)
+    # Operator can't be a staking provider
+    tx = threshold_staking.functions.setRoles(operator1).transact()
+    testerchain.wait_for_receipt(tx)
+    with pytest.raises((TransactionFailed, ValueError)):
+        tx = threshold_staking.functions.authorizationIncreased(
+            operator1, 0, min_authorization).transact({'from': operator1})
+        testerchain.wait_for_receipt(tx)
+    tx = threshold_staking.functions.setRoles(operator1, NULL_ADDRESS, NULL_ADDRESS, NULL_ADDRESS).transact()
+    testerchain.wait_for_receipt(tx)
 
     # Can't bond operator twice too soon
     with pytest.raises((TransactionFailed, ValueError)):
@@ -205,7 +202,8 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     assert pre_application.functions.isOperatorConfirmed(operator2).call()
     assert pre_application.functions.stakingProviderInfo(staking_provider_3).call()[CONFIRMATION_SLOT]
 
-    # Another staker can bond a free operator
+    # Another staking provider can bond a free operator
+    assert pre_application.functions.authorizedOverall().call() == min_authorization
     tx = pre_application.functions.bondOperator(staking_provider_4, operator1).transact({'from': staking_provider_4})
     testerchain.wait_for_receipt(tx)
     timestamp = testerchain.w3.eth.getBlock('latest').timestamp
@@ -215,6 +213,7 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     assert not pre_application.functions.stakingProviderInfo(staking_provider_4).call()[CONFIRMATION_SLOT]
     assert pre_application.functions.getStakingProvidersLength().call() == 2
     assert pre_application.functions.stakingProviders(1).call() == staking_provider_4
+    assert pre_application.functions.authorizedOverall().call() == min_authorization
 
     number_of_events += 1
     events = operator_log.get_all_entries()
@@ -224,21 +223,22 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     assert event_args['operator'] == operator1
     assert event_args['startTimestamp'] == timestamp
 
-    # # The first operator still can't be a staking provider
-    # tx = threshold_staking.functions.setRoles(operator1).transact()
-    # testerchain.wait_for_receipt(tx)
-    # tx = threshold_staking.functions.setStakes(operator1, min_authorization, 0, 0).transact()
-    # testerchain.wait_for_receipt(tx)
-    # with pytest.raises((TransactionFailed, ValueError)):
-    #     tx = threshold_staking.functions.increaseAuthorization(
-    #         operator1, min_authorization, pre_application.address).transact({'from': operator1})
-    #     testerchain.wait_for_receipt(tx)
+    # The first operator still can't be a staking provider
+    tx = threshold_staking.functions.setRoles(operator1).transact()
+    testerchain.wait_for_receipt(tx)
+    with pytest.raises((TransactionFailed, ValueError)):
+        tx = threshold_staking.functions.authorizationIncreased(
+            operator1, 0, min_authorization).transact({'from': operator1})
+        testerchain.wait_for_receipt(tx)
+    tx = threshold_staking.functions.setRoles(operator1, NULL_ADDRESS, NULL_ADDRESS, NULL_ADDRESS).transact()
+    testerchain.wait_for_receipt(tx)
 
     # Bond operator again
     tx = pre_application.functions.confirmOperatorAddress().transact({'from': operator1})
     testerchain.wait_for_receipt(tx)
     assert pre_application.functions.isOperatorConfirmed(operator1).call()
     assert pre_application.functions.stakingProviderInfo(staking_provider_4).call()[CONFIRMATION_SLOT]
+    assert pre_application.functions.authorizedOverall().call() == 2 * min_authorization
     testerchain.time_travel(seconds=min_operator_seconds)
     tx = pre_application.functions.bondOperator(staking_provider_4, operator3).transact({'from': staking_provider_4})
     testerchain.wait_for_receipt(tx)
@@ -251,6 +251,7 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     assert not pre_application.functions.stakingProviderInfo(staking_provider_4).call()[CONFIRMATION_SLOT]
     assert pre_application.functions.getStakingProvidersLength().call() == 2
     assert pre_application.functions.stakingProviders(1).call() == staking_provider_4
+    assert pre_application.functions.authorizedOverall().call() == min_authorization
 
     # Resetting operator removes from active list before next confirmation
     all_locked, staking_providers = pre_application.functions.getActiveStakingProviders(1, 0).call()
@@ -265,15 +266,12 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     assert event_args['operator'] == operator3
     assert event_args['startTimestamp'] == timestamp
 
-    # The first operator is free and can deposit tokens and become a staker
+    # The first operator is free and can deposit tokens and become a staking provider
     tx = threshold_staking.functions.setRoles(operator1).transact()
     testerchain.wait_for_receipt(tx)
-    tx = threshold_staking.functions.setStakes(
-        operator1, min_authorization // 3, min_authorization // 3, min_authorization // 3).transact()
+    tx = threshold_staking.functions.authorizationIncreased(
+        operator1, 0, min_authorization).transact({'from': operator1})
     testerchain.wait_for_receipt(tx)
-    # tx = threshold_staking.functions.increaseAuthorization(
-    #     operator1, min_authorization, pre_application.address).transact({'from': operator1})
-    # testerchain.wait_for_receipt(tx)
     assert pre_application.functions.getOperatorFromStakingProvider(operator1).call() == NULL_ADDRESS
     assert pre_application.functions.stakingProviderFromOperator(operator1).call() == NULL_ADDRESS
 
@@ -303,21 +301,17 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     assert event_args['operator'] == staking_provider_1
     assert event_args['startTimestamp'] == timestamp
 
-    # If stake will be less than minimum then confirmation is not possible
-    tx = threshold_staking.functions.setStakes(staking_provider_1, 0, min_authorization - 1, 0).transact()
-    testerchain.wait_for_receipt(tx)
-
-    with pytest.raises((TransactionFailed, ValueError)):
-        tx = pre_application.functions.confirmOperatorAddress().transact({'from': staking_provider_1})
-        testerchain.wait_for_receipt(tx)
-
-    # Now provider can make a confirmation
-    tx = threshold_staking.functions.setStakes(staking_provider_1, 0, 0, min_authorization).transact()
+    # If stake will be less than minimum then confirmation is still possible
+    tx = threshold_staking.functions.involuntaryAuthorizationDecrease(
+        staking_provider_1, min_authorization, min_authorization - 1).transact()
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.confirmOperatorAddress().transact({'from': staking_provider_1})
     testerchain.wait_for_receipt(tx)
 
     # If stake will be less than minimum then provider is not active
+    tx = threshold_staking.functions.authorizationIncreased(
+        staking_provider_1, min_authorization - 1, min_authorization).transact()
+    testerchain.wait_for_receipt(tx)
     all_locked, staking_providers = pre_application.functions.getActiveStakingProviders(0, 0).call()
     assert all_locked == 2 * min_authorization
     assert len(staking_providers) == 2
@@ -325,7 +319,8 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     assert staking_providers[0][1] == min_authorization
     assert to_checksum_address(staking_providers[1][0]) == staking_provider_1
     assert staking_providers[1][1] == min_authorization
-    tx = threshold_staking.functions.setStakes(staking_provider_1, 0, min_authorization - 1, 0).transact()
+    tx = threshold_staking.functions.involuntaryAuthorizationDecrease(
+        staking_provider_1, min_authorization, min_authorization - 1).transact()
     testerchain.wait_for_receipt(tx)
     all_locked, staking_providers = pre_application.functions.getActiveStakingProviders(1, 0).call()
     assert all_locked == 0
@@ -339,23 +334,18 @@ def test_confirm_address(testerchain, threshold_staking, pre_application, applic
 
     confirmations_log = pre_application.events.OperatorConfirmed.createFilter(fromBlock='latest')
 
-    # Operator must be associated with provider that has minimum amount of tokens
+    # Operator must be associated with staking provider
     with pytest.raises((TransactionFailed, ValueError)):
         tx = pre_application.functions.confirmOperatorAddress().transact({'from': staking_provider})
         testerchain.wait_for_receipt(tx)
     tx = threshold_staking.functions.setRoles(staking_provider).transact()
     testerchain.wait_for_receipt(tx)
-    tx = threshold_staking.functions.setStakes(staking_provider, min_authorization - 1, 0, 0).transact()
-    testerchain.wait_for_receipt(tx)
-    with pytest.raises((TransactionFailed, ValueError)):
-        tx = pre_application.functions.confirmOperatorAddress().transact({'from': staking_provider})
-        testerchain.wait_for_receipt(tx)
 
     # Deploy intermediary contract
     intermediary, _ = deploy_contract('Intermediary', pre_application.address)
 
     # Bond contract as an operator
-    tx = threshold_staking.functions.setStakes(staking_provider, min_authorization, 0, 0).transact()
+    tx = threshold_staking.functions.authorizationIncreased(staking_provider, 0, min_authorization).transact()
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.bondOperator(staking_provider, intermediary.address).transact({'from': staking_provider})
     testerchain.wait_for_receipt(tx)
@@ -369,10 +359,12 @@ def test_confirm_address(testerchain, threshold_staking, pre_application, applic
     testerchain.time_travel(seconds=min_operator_seconds)
     tx = pre_application.functions.bondOperator(staking_provider, operator).transact({'from': staking_provider})
     testerchain.wait_for_receipt(tx)
+    assert pre_application.functions.authorizedOverall().call() == 0
     tx = pre_application.functions.confirmOperatorAddress().transact({'from': operator})
     testerchain.wait_for_receipt(tx)
     assert pre_application.functions.isOperatorConfirmed(operator).call()
     assert pre_application.functions.stakingProviderInfo(staking_provider).call()[CONFIRMATION_SLOT]
+    assert pre_application.functions.authorizedOverall().call() == min_authorization
 
     events = confirmations_log.get_all_entries()
     assert len(events) == 1
@@ -384,3 +376,17 @@ def test_confirm_address(testerchain, threshold_staking, pre_application, applic
     with pytest.raises((TransactionFailed, ValueError)):
         tx = pre_application.functions.confirmOperatorAddress().transact({'from': operator})
         testerchain.wait_for_receipt(tx)
+
+
+def test_slash(testerchain, threshold_staking, pre_application, token_economics):
+    creator, staking_provider, investigator, *everyone_else = testerchain.client.accounts
+    min_authorization = token_economics.minimum_allowed_locked
+    penalty = min_authorization
+
+    tx = pre_application.functions.testSlash(staking_provider, penalty, investigator).transact()
+    testerchain.wait_for_receipt(tx)
+    assert threshold_staking.functions.amountToSeize().call() == penalty
+    assert threshold_staking.functions.rewardMultiplier().call() == 100
+    assert threshold_staking.functions.notifier().call() == investigator
+    assert threshold_staking.functions.stakingProvidersToSeize(0).call() == staking_provider
+    assert threshold_staking.functions.getLengthOfStakingProvidersToSeize().call() == 1

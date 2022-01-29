@@ -35,101 +35,101 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     event RewardAdded(uint256 reward);
 
     /**
-    * @notice Signals that the beneficiary related to the operator received reward
-    * @param operator Operator address
+    * @notice Signals that the beneficiary related to the staking provider received reward
+    * @param stakingProvider Staking provider address
     * @param beneficiary Beneficiary address
     * @param reward Amount of reward
     */
-    event RewardPaid(address indexed operator, address indexed beneficiary, uint256 reward);
+    event RewardPaid(address indexed stakingProvider, address indexed beneficiary, uint256 reward);
 
     /**
-    * @notice Signals that authorization was increased for the operator
-    * @param operator Operator address
+    * @notice Signals that authorization was increased for the staking provider
+    * @param stakingProvider Staking provider address
     * @param fromAmount Previous amount of increased authorization
     * @param toAmount New amount of increased authorization
     */
-    event AuthorizationIncreased(address indexed operator, uint96 fromAmount, uint96 toAmount);
+    event AuthorizationIncreased(address indexed stakingProvider, uint96 fromAmount, uint96 toAmount);
 
     /**
     * @notice Signals that authorization was decreased involuntary
-    * @param operator Operator address
+    * @param stakingProvider Staking provider address
     * @param fromAmount Previous amount of authorized tokens
     * @param toAmount Amount of authorized tokens to decrease
     */
-    event AuthorizationInvoluntaryDecreased(address indexed operator, uint96 fromAmount, uint96 toAmount);
+    event AuthorizationInvoluntaryDecreased(address indexed stakingProvider, uint96 fromAmount, uint96 toAmount);
 
     /**
-    * @notice Signals that authorization decrease was requested for the operator
-    * @param operator Operator address
+    * @notice Signals that authorization decrease was requested for the staking provider
+    * @param stakingProvider Staking provider address
     * @param fromAmount Current amount of authorized tokens
     * @param toAmount Amount of authorization to decrease
     */
-    event AuthorizationDecreaseRequested(address indexed operator, uint96 fromAmount, uint96 toAmount);
+    event AuthorizationDecreaseRequested(address indexed stakingProvider, uint96 fromAmount, uint96 toAmount);
 
     /**
-    * @notice Signals that authorization decrease was approved for the operator
-    * @param operator Operator address
+    * @notice Signals that authorization decrease was approved for the staking provider
+    * @param stakingProvider Staking provider address
     * @param fromAmount Previous amount of authorized tokens
     * @param toAmount Decreased amount of authorized tokens
     */
-    event AuthorizationDecreaseApproved(address indexed operator, uint96 fromAmount, uint96 toAmount);
+    event AuthorizationDecreaseApproved(address indexed stakingProvider, uint96 fromAmount, uint96 toAmount);
 
     /**
     * @notice Signals that authorization was resynchronized
-    * @param operator Operator address
+    * @param stakingProvider Staking provider address
     * @param fromAmount Previous amount of authorized tokens
     * @param toAmount Resynchronized amount of authorized tokens
     */
-    event AuthorizationReSynchronized(address indexed operator, uint96 fromAmount, uint96 toAmount);
+    event AuthorizationReSynchronized(address indexed stakingProvider, uint96 fromAmount, uint96 toAmount);
 
     /**
-    * @notice Signals that the operator was slashed
-    * @param operator Operator address
+    * @notice Signals that the staking provider was slashed
+    * @param stakingProvider Staking provider address
     * @param penalty Slashing penalty
     * @param investigator Investigator address
     * @param reward Value of reward provided to investigator (in NuNits)
     */
-    event Slashed(address indexed operator, uint256 penalty, address indexed investigator, uint256 reward);
+    event Slashed(address indexed stakingProvider, uint256 penalty, address indexed investigator, uint256 reward);
 
     /**
-    * @notice Signals that a worker was bonded to the operator
+    * @notice Signals that an operator was bonded to the staking provider
+    * @param stakingProvider Staking provider address
     * @param operator Operator address
-    * @param worker Worker address
     * @param startTimestamp Timestamp bonding occurred
     */
-    event WorkerBonded(address indexed operator, address indexed worker, uint256 startTimestamp);
+    event OperatorBonded(address indexed stakingProvider, address indexed operator, uint256 startTimestamp);
 
     /**
-    * @notice Signals that a worker address is confirmed
+    * @notice Signals that an operator address is confirmed
+    * @param stakingProvider Staking provider address
     * @param operator Operator address
-    * @param worker Worker address
     */
-    event WorkerConfirmed(address indexed operator, address indexed worker);
+    event OperatorConfirmed(address indexed stakingProvider, address indexed operator);
 
-    struct OperatorInfo {
-        address worker;
-        bool workerConfirmed;
-        uint256 workerStartTimestamp;
+    struct StakingProviderInfo {
+        address operator;
+        bool operatorConfirmed;
+        uint256 operatorStartTimestamp;
 
         uint96 authorized;
         uint96 tReward;
         uint96 rewardPerTokenPaid;
 
-        uint96 deauthorizing; // TODO real usage only in getActiveOperators, maybe remove?
+        uint96 deauthorizing; // TODO real usage only in getActiveStakingProviders, maybe remove?
         uint256 endDeauthorization;
     }
 
     uint256 public immutable minAuthorization;
-    uint256 public immutable minWorkerSeconds;
+    uint256 public immutable minOperatorSeconds;
     uint256 public immutable rewardDuration;
     uint256 public immutable deauthorizationDuration;
 
     IStaking public immutable tStaking;
     IERC20 public immutable token;
 
-    mapping (address => OperatorInfo) public operatorInfo;
-    address[] public operators;
-    mapping(address => address) internal _operatorFromWorker;
+    mapping (address => StakingProviderInfo) public stakingProviderInfo;
+    address[] public stakingProviders;
+    mapping(address => address) internal _stakingProviderFromOperator;
 
     address public rewardDistributor;
     uint256 public periodFinish = 0;
@@ -149,7 +149,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     * @param _rewardDuration Duration of one reward cycle
     * @param _deauthorizationDuration Duration of decreasing authorization
     * @param _minAuthorization Amount of minimum allowable authorization
-    * @param _minWorkerSeconds Min amount of seconds while a worker can't be changed
+    * @param _minOperatorSeconds Min amount of seconds while an operator can't be changed
     */
     constructor(
         SignatureVerifier.HashAlgorithm _hashAlgorithm,
@@ -161,7 +161,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         uint256 _rewardDuration,
         uint256 _deauthorizationDuration,
         uint256 _minAuthorization,
-        uint256 _minWorkerSeconds
+        uint256 _minOperatorSeconds
     )
         Adjudicator(
             _hashAlgorithm,
@@ -181,14 +181,14 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         minAuthorization = _minAuthorization;
         token = _token;
         tStaking = _tStaking;
-        minWorkerSeconds = _minWorkerSeconds;
+        minOperatorSeconds = _minOperatorSeconds;
     }
 
     /**
-    * @dev Update reward for the specified operator
+    * @dev Update reward for the specified staking provider
     */
-    modifier updateReward(address _operator) {
-        updateRewardInternal(_operator);
+    modifier updateReward(address _stakingProvider) {
+        updateRewardInternal(_stakingProvider);
         _;
     }
 
@@ -202,14 +202,14 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     }
 
     /**
-    * @dev Checks caller is an operator or stake owner
+    * @dev Checks caller is a staking provider or stake owner
     */
-    modifier onlyOwnerOrOperator(address _operator)
+    modifier onlyOwnerOrStakingProvider(address _stakingProvider)
     {
-        require(isAuthorized(_operator), "Not owner or operator");
-        if (_operator != msg.sender) {
-            (address owner,,) = tStaking.rolesOf(_operator);
-            require(owner == msg.sender, "Not owner or operator");
+        require(isAuthorized(_stakingProvider), "Not owner or provider");
+        if (_stakingProvider != msg.sender) {
+            (address owner,,) = tStaking.rolesOf(_stakingProvider);
+            require(owner == msg.sender, "Not owner or provider");
         }
         _;
     }
@@ -235,15 +235,15 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     }
 
     /**
-    * @notice Update reward for the specified operator
-    * @param _operator Operator address
+    * @notice Update reward for the specified staking provider
+    * @param _stakingProvider Staking provider address
     */
-    function updateRewardInternal(address _operator) internal {
+    function updateRewardInternal(address _stakingProvider) internal {
         rewardPerTokenStored = rewardPerToken();
         lastUpdateTime = lastTimeRewardApplicable();
-        if (_operator != address(0)) {
-            OperatorInfo storage info = operatorInfo[_operator];
-            info.tReward = earned(_operator);
+        if (_stakingProvider != address(0)) {
+            StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
+            info.tReward = earned(_stakingProvider);
             info.rewardPerTokenPaid = rewardPerTokenStored;
         }
     }
@@ -271,12 +271,12 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     }
 
     /**
-    * @notice Returns amount of reward for the operator
-    * @param _operator Operator address
+    * @notice Returns amount of reward for the staking provider
+    * @param _stakingProvider Staking provider address
     */
-    function earned(address _operator) public view returns (uint96) {
-        OperatorInfo storage info = operatorInfo[_operator];
-        if (!info.workerConfirmed) {
+    function earned(address _stakingProvider) public view returns (uint96) {
+        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
+        if (!info.operatorConfirmed) {
             return info.tReward;
         }
         uint256 result = uint256(info.authorized) *
@@ -308,17 +308,17 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
 
     /**
     * @notice Withdraw available amount of T reward to beneficiary. Can be called only by beneficiary
-    * @param _operator Operator address
+    * @param _stakingProvider Staking provider address
     */
-    function withdraw(address _operator) external updateReward(_operator) {
-        address beneficiary = getBeneficiary(_operator);
+    function withdraw(address _stakingProvider) external updateReward(_stakingProvider) {
+        address beneficiary = getBeneficiary(_stakingProvider);
         require(msg.sender == beneficiary, "Caller must be beneficiary");
 
-        OperatorInfo storage info = operatorInfo[_operator];
+        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
         require(info.tReward > 0, "No reward to withdraw");
         uint96 value = info.tReward;
         info.tReward = 0;
-        emit RewardPaid(_operator, beneficiary, value);
+        emit RewardPaid(_stakingProvider, beneficiary, value);
         token.safeTransfer(beneficiary, value);
     }
 
@@ -326,79 +326,79 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
 
     /**
     * @notice Recalculate reward and save increased authorization. Can be called only by staking contract
-    * @param _operator Address of operator
-    * @param _fromAmount Amount of previously authorized tokens to PRE application by operator
-    * @param _toAmount Amount of authorized tokens to PRE application by operator
+    * @param _stakingProvider Address of staking provider
+    * @param _fromAmount Amount of previously authorized tokens to PRE application by staking provider
+    * @param _toAmount Amount of authorized tokens to PRE application by staking provider
     */
     function authorizationIncreased(
-        address _operator,
+        address _stakingProvider,
         uint96 _fromAmount,
         uint96 _toAmount
     )
-        external override onlyStakingContract updateReward(_operator)
+        external override onlyStakingContract updateReward(_stakingProvider)
     {
-        require(_operator != address(0) && _toAmount > 0, "Input parameters must be specified");
+        require(_stakingProvider != address(0) && _toAmount > 0, "Input parameters must be specified");
         require(_toAmount >= minAuthorization, "Authorization must be greater than minimum");
 
-        OperatorInfo storage info = operatorInfo[_operator];
+        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
         require(
-            _operatorFromWorker[_operator] == address(0) ||
-            _operatorFromWorker[_operator] == info.worker,
-            "An operator can't be a worker for another operator"
+            _stakingProviderFromOperator[_stakingProvider] == address(0) ||
+            _stakingProviderFromOperator[_stakingProvider] == info.operator,
+            "A provider can't be an operator for another provider"
         );
 
-        if (info.workerConfirmed) {
+        if (info.operatorConfirmed) {
             authorizedOverall += _toAmount - _fromAmount;
         }
 
         info.authorized = _toAmount;
-        emit AuthorizationIncreased(_operator, _fromAmount, _toAmount);
+        emit AuthorizationIncreased(_stakingProvider, _fromAmount, _toAmount);
     }
 
     /**
     * @notice Immediately decrease authorization. Can be called only by staking contract
-    * @param _operator Address of operator
+    * @param _stakingProvider Address of staking provider
     * @param _fromAmount Previous amount of authorized tokens
     * @param _toAmount Amount of authorized tokens to decrease
     */
     function involuntaryAuthorizationDecrease(
-        address _operator,
+        address _stakingProvider,
         uint96 _fromAmount,
         uint96 _toAmount
     )
-        external override onlyStakingContract updateReward(_operator)
+        external override onlyStakingContract updateReward(_stakingProvider)
     {
-        OperatorInfo storage info = operatorInfo[_operator];
+        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
         info.authorized = _toAmount;
         if (info.authorized < info.deauthorizing) {
             info.deauthorizing = info.authorized;
         }
-        if (info.workerConfirmed) {
+        if (info.operatorConfirmed) {
             authorizedOverall -= _fromAmount - _toAmount;
         }
-        emit AuthorizationInvoluntaryDecreased(_operator, _fromAmount, _toAmount);
+        emit AuthorizationInvoluntaryDecreased(_stakingProvider, _fromAmount, _toAmount);
 
         if (info.authorized == 0) {
-            _operatorFromWorker[info.worker] = address(0);
-            info.worker = address(0);
-            info.workerConfirmed == false;
+            _stakingProviderFromOperator[info.operator] = address(0);
+            info.operator = address(0);
+            info.operatorConfirmed == false;
         }
     }
 
     /**
     * @notice Register request of decreasing authorization. Can be called only by staking contract
-    * @param _operator Address of operator
+    * @param _stakingProvider Address of staking provider
     * @param _fromAmount Current amount of authorized tokens
     * @param _toAmount Amount of authorized tokens to decrease
     */
     function authorizationDecreaseRequested(
-        address _operator,
+        address _stakingProvider,
         uint96 _fromAmount,
         uint96 _toAmount
     )
         external override onlyStakingContract
     {
-        OperatorInfo storage info = operatorInfo[_operator];
+        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
         require(_toAmount <= info.authorized, "Amount to decrease greater than authorized");
         require(
             _toAmount == 0 || _toAmount >= minAuthorization,
@@ -406,49 +406,49 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         );
         info.deauthorizing = _fromAmount - _toAmount;
         info.endDeauthorization = block.timestamp + deauthorizationDuration;
-        emit AuthorizationDecreaseRequested(_operator, _fromAmount, _toAmount);
+        emit AuthorizationDecreaseRequested(_stakingProvider, _fromAmount, _toAmount);
     }
 
     /**
     * @notice Approve request of decreasing authorization. Can be called only by anyone
-    * @param _operator Address of operator
+    * @param _stakingProvider Address of staking provider
     */
-    function finishAuthorizationDecrease(address _operator) external updateReward(_operator) {
-        OperatorInfo storage info = operatorInfo[_operator];
+    function finishAuthorizationDecrease(address _stakingProvider) external updateReward(_stakingProvider) {
+        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
         require(info.deauthorizing > 0, "There is no deauthorizing in process");
         require(info.endDeauthorization <= block.timestamp, "Authorization decrease has not finished yet");
 
-        uint96 toAmount = tStaking.approveAuthorizationDecrease(_operator);
+        uint96 toAmount = tStaking.approveAuthorizationDecrease(_stakingProvider);
 
-        if (info.workerConfirmed) {
+        if (info.operatorConfirmed) {
             authorizedOverall -= info.authorized - toAmount;
         }
 
-        emit AuthorizationDecreaseApproved(_operator, info.authorized, toAmount);
+        emit AuthorizationDecreaseApproved(_stakingProvider, info.authorized, toAmount);
         info.authorized = toAmount;
         info.deauthorizing = 0;
         info.endDeauthorization = 0;
 
         if (info.authorized == 0) {
-            _operatorFromWorker[info.worker] = address(0);
-            info.worker = address(0);
-            info.workerConfirmed == false;
+            _stakingProviderFromOperator[info.operator] = address(0);
+            info.operator = address(0);
+            info.operatorConfirmed == false;
         }
     }
 
     /**
     * @notice Read authorization from staking contract and store it. Can be called only by anyone
-    * @param _operator Address of operator
+    * @param _stakingProvider Address of staking provider
     */
-    function resynchronizeAuthorization(address _operator) external updateReward(_operator) {
-        OperatorInfo storage info = operatorInfo[_operator];
-        uint96 newAuthorized = tStaking.authorizedStake(_operator, address(this));
+    function resynchronizeAuthorization(address _stakingProvider) external updateReward(_stakingProvider) {
+        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
+        uint96 newAuthorized = tStaking.authorizedStake(_stakingProvider, address(this));
         require(info.authorized > newAuthorized, "Nothing to synchronize");
 
-        if (info.workerConfirmed) {
+        if (info.operatorConfirmed) {
             authorizedOverall -= info.authorized - newAuthorized;
         }
-        emit AuthorizationReSynchronized(_operator, info.authorized, newAuthorized);
+        emit AuthorizationReSynchronized(_stakingProvider, info.authorized, newAuthorized);
 
         info.authorized = newAuthorized;
         if (info.authorized < info.deauthorizing) {
@@ -456,179 +456,181 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         }
 
         if (info.authorized == 0) {
-            _operatorFromWorker[info.worker] = address(0);
-            info.worker = address(0);
-            info.workerConfirmed == false;
+            _stakingProviderFromOperator[info.operator] = address(0);
+            info.operator = address(0);
+            info.operatorConfirmed == false;
         }
     }
 
     //-------------------------Main-------------------------
     /**
-    * @notice Returns operator for specified worker
+    * @notice Returns staking provider for specified operator
     */
-    function operatorFromWorker(address _worker) public view override returns (address) {
-        return _operatorFromWorker[_worker];
+    function stakingProviderFromOperator(address _operator) public view override returns (address) {
+        return _stakingProviderFromOperator[_operator];
     }
 
     /**
-    * @notice Returns worker for specified operator
+    * @notice Returns operator for specified staking provider
     */
-    function getWorkerFromOperator(address _operator) public view returns (address) {
-        return operatorInfo[_operator].worker;
+    function getOperatorFromStakingProvider(address _stakingProvider) public view returns (address) {
+        return stakingProviderInfo[_stakingProvider].operator;
     }
 
     /**
-    * @notice Get all tokens delegated to the operator
+    * @notice Get all tokens delegated to the staking provider
     */
-    function authorizedStake(address _operator) public view override returns (uint96) {
-        return operatorInfo[_operator].authorized;
+    function authorizedStake(address _stakingProvider) public view override returns (uint96) {
+        return stakingProviderInfo[_stakingProvider].authorized;
     }
 
     /**
-    * @notice Get the value of authorized tokens for active operators as well as operators and their authorized tokens
-    * @param _startIndex Start index for looking in operators array
-    * @param _maxOperators Max operators for looking, if set 0 then all will be used
-    * @return allAuthorizedTokens Sum of authorized tokens for active operators
-    * @return activeOperators Array of operators and their authorized tokens. Operators addresses stored as uint256
-    * @dev Note that activeOperators[0] in an array of uint256, but you want addresses. Careful when used directly!
+    * @notice Get the value of authorized tokens for active providers as well as providers and their authorized tokens
+    * @param _startIndex Start index for looking in providers array
+    * @param _maxStakingProviders Max providers for looking, if set 0 then all will be used
+    * @return allAuthorizedTokens Sum of authorized tokens for active providers
+    * @return activeStakingProviders Array of providers and their authorized tokens.
+    * Providers addresses stored as uint256
+    * @dev Note that activeStakingProviders[0] is an array of uint256, but you want addresses.
+    * Careful when used directly!
     */
-    function getActiveOperators(uint256 _startIndex, uint256 _maxOperators)
-        external view returns (uint256 allAuthorizedTokens, uint256[2][] memory activeOperators)
+    function getActiveStakingProviders(uint256 _startIndex, uint256 _maxStakingProviders)
+        external view returns (uint256 allAuthorizedTokens, uint256[2][] memory activeStakingProviders)
     {
-        uint256 endIndex = operators.length;
+        uint256 endIndex = stakingProviders.length;
         require(_startIndex < endIndex, "Wrong start index");
-        if (_maxOperators != 0 && _startIndex + _maxOperators < endIndex) {
-            endIndex = _startIndex + _maxOperators;
+        if (_maxStakingProviders != 0 && _startIndex + _maxStakingProviders < endIndex) {
+            endIndex = _startIndex + _maxStakingProviders;
         }
-        activeOperators = new uint256[2][](endIndex - _startIndex);
+        activeStakingProviders = new uint256[2][](endIndex - _startIndex);
         allAuthorizedTokens = 0;
 
         uint256 resultIndex = 0;
         for (uint256 i = _startIndex; i < endIndex; i++) {
-            address operator = operators[i];
-            OperatorInfo storage info = operatorInfo[operator];
+            address stakingProvider = stakingProviders[i];
+            StakingProviderInfo storage info = stakingProviderInfo[stakingProvider];
             uint256 eligibleAmount = info.authorized - info.deauthorizing;
-            if (eligibleAmount < minAuthorization || !info.workerConfirmed) {
+            if (eligibleAmount < minAuthorization || !info.operatorConfirmed) {
                 continue;
             }
-            activeOperators[resultIndex][0] = uint256(uint160(operator));
-            activeOperators[resultIndex++][1] = eligibleAmount;
+            activeStakingProviders[resultIndex][0] = uint256(uint160(stakingProvider));
+            activeStakingProviders[resultIndex++][1] = eligibleAmount;
             allAuthorizedTokens += eligibleAmount;
         }
         assembly {
-            mstore(activeOperators, resultIndex)
+            mstore(activeStakingProviders, resultIndex)
         }
     }
 
     /**
-    * @notice Returns beneficiary related to the operator
+    * @notice Returns beneficiary related to the staking provider
     */
-    function getBeneficiary(address _operator) public view returns (address payable beneficiary) {
-        (, beneficiary,) = tStaking.rolesOf(_operator);
+    function getBeneficiary(address _stakingProvider) public view returns (address payable beneficiary) {
+        (, beneficiary,) = tStaking.rolesOf(_stakingProvider);
     }
 
     /**
-    * @notice Returns true if operator has authorized stake to this application
+    * @notice Returns true if staking provider has authorized stake to this application
     */
-    function isAuthorized(address _operator) public view returns (bool) {
-        return operatorInfo[_operator].authorized > 0;
+    function isAuthorized(address _stakingProvider) public view returns (bool) {
+        return stakingProviderInfo[_stakingProvider].authorized > 0;
     }
 
     /**
-    * @notice Returns true if worker has confirmed address
+    * @notice Returns true if operator has confirmed address
     */
-    // TODO maybe _operator instead of _worker?
-    function isWorkerConfirmed(address _worker) public view returns (bool) {
-        address operator = _operatorFromWorker[_worker];
-        OperatorInfo storage info = operatorInfo[operator];
-        return info.workerConfirmed;
+    // TODO maybe _stakingProvider instead of _operator as input?
+    function isOperatorConfirmed(address _operator) public view returns (bool) {
+        address stakingProvider = _stakingProviderFromOperator[_operator];
+        StakingProviderInfo storage info = stakingProviderInfo[stakingProvider];
+        return info.operatorConfirmed;
     }
 
     /**
-    * @notice Return the length of the array of operators
+    * @notice Return the length of the array of staking providers
     */
-    function getOperatorsLength() external view returns (uint256) {
-        return operators.length;
+    function getStakingProvidersLength() external view returns (uint256) {
+        return stakingProviders.length;
     }
 
     /**
-    * @notice Bond worker
-    * @param _operator Operator address
-    * @param _worker Worker address. Must be a real address, not a contract
+    * @notice Bond operator
+    * @param _stakingProvider Staking provider address
+    * @param _operator Operator address. Must be a real address, not a contract
     */
-    function bondWorker(address _operator, address _worker)
-        external onlyOwnerOrOperator(_operator) updateReward(_operator)
+    function bondOperator(address _stakingProvider, address _operator)
+        external onlyOwnerOrStakingProvider(_stakingProvider) updateReward(_stakingProvider)
     {
-        OperatorInfo storage info = operatorInfo[_operator];
-        require(_worker != info.worker, "Specified worker is already bonded with this operator");
-        // If this staker had a worker ...
-        if (info.worker != address(0)) {
-            require(
-                block.timestamp >= info.workerStartTimestamp + minWorkerSeconds,
-                "Not enough time passed to change worker"
+        StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
+        require(_operator != info.operator, "Specified operator is already bonded with this provider");
+        // If this staker had a operator ...
+        if (info.operator != address(0)) {
+             require(
+                block.timestamp >= info.operatorStartTimestamp + minOperatorSeconds,
+                "Not enough time passed to change operator"
             );
-            // Remove the old relation "worker->operator"
-            _operatorFromWorker[info.worker] = address(0);
+            // Remove the old relation "operator->stakingProvider"
+            _stakingProviderFromOperator[info.operator] = address(0);
         }
 
-        if (_worker != address(0)) {
-            require(_operatorFromWorker[_worker] == address(0), "Specified worker is already in use");
+        if (_operator != address(0)) {
+            require(_stakingProviderFromOperator[_operator] == address(0), "Specified operator is already in use");
             require(
-                _worker == _operator || getBeneficiary(_worker) == address(0),
-                "Specified worker is an operator"
+                _operator == _stakingProvider || getBeneficiary(_operator) == address(0),
+                "Specified operator is a provider"
             );
-            // Set new worker->operator relation
-            _operatorFromWorker[_worker] = _operator;
+            // Set new operator->stakingProvider relation
+            _stakingProviderFromOperator[_operator] = _stakingProvider;
         }
 
-        if (info.workerStartTimestamp == 0) {
-            operators.push(_operator);
+        if (info.operatorStartTimestamp == 0) {
+            stakingProviders.push(_stakingProvider);
         }
 
-        if (info.workerConfirmed) {
+        if (info.operatorConfirmed) {
             authorizedOverall -= info.authorized;
         }
 
-        // Bond new worker (or unbond if _worker == address(0))
-        info.worker = _worker;
-        info.workerStartTimestamp = block.timestamp;
-        info.workerConfirmed = false;
-        emit WorkerBonded(_operator, _worker, block.timestamp);
+        // Bond new operator (or unbond if _operator == address(0))
+        info.operator = _operator;
+        info.operatorStartTimestamp = block.timestamp;
+        info.operatorConfirmed = false;
+        emit OperatorBonded(_stakingProvider, _operator, block.timestamp);
     }
 
     /**
-    * @notice Make a confirmation by worker
+    * @notice Make a confirmation by operator
     */
-    function confirmWorkerAddress() external {
-        address operator = _operatorFromWorker[msg.sender];
-        require(isAuthorized(operator), "No stake associated with the worker");
-        OperatorInfo storage info = operatorInfo[operator];
-        require(!info.workerConfirmed, "Worker address is already confirmed");
-        require(msg.sender == tx.origin, "Only worker with real address can make a confirmation");
+    function confirmOperatorAddress() external {
+        address stakingProvider = _stakingProviderFromOperator[msg.sender];
+        require(isAuthorized(stakingProvider), "No stake associated with the operator");
+        StakingProviderInfo storage info = stakingProviderInfo[stakingProvider];
+        require(!info.operatorConfirmed, "Operator address is already confirmed");
+        require(msg.sender == tx.origin, "Only operator with real address can make a confirmation");
 
-        updateRewardInternal(operator);
-        info.workerConfirmed = true;
+        updateRewardInternal(stakingProvider);
+        info.operatorConfirmed = true;
         authorizedOverall += info.authorized;
-        emit WorkerConfirmed(operator, msg.sender);
+        emit OperatorConfirmed(stakingProvider, msg.sender);
     }
 
     //-------------------------Slashing-------------------------
     /**
-    * @notice Slash the operator's stake and reward the investigator
-    * @param _operator Operator's address
+    * @notice Slash the provider's stake and reward the investigator
+    * @param _stakingProvider Staking provider address
     * @param _penalty Penalty
     * @param _investigator Investigator
     */
     function slash(
-        address _operator,
+        address _stakingProvider,
         uint96 _penalty,
         address _investigator
     )
         internal override
     {
-        address[] memory operatorWrapper = new address[](1);
-        operatorWrapper[0] = _operator;
-        tStaking.seize(_penalty, 100, _investigator, operatorWrapper);
+        address[] memory stakingProviderWrapper = new address[](1);
+        stakingProviderWrapper[0] = _stakingProvider;
+        tStaking.seize(_penalty, 100, _investigator, stakingProviderWrapper);
     }
 
 }

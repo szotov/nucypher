@@ -40,7 +40,7 @@ contract ThresholdStakingForPREApplicationMock {
     uint96 public amountToSeize;
     uint256 public rewardMultiplier;
     address public notifier;
-    address[] public operatorsToSeize;
+    address[] public stakingProvidersToSeize;
 
     function setApplication(PREApplication _preApplication) external {
         preApplication = _preApplication;
@@ -72,11 +72,11 @@ contract ThresholdStakingForPREApplicationMock {
         setRoles(_stakingProvider, _stakingProvider, payable(_stakingProvider), _stakingProvider);
     }
 
-    function setAuthorized(address _stakingProviderrator, uint96 _authorized) external {
+    function setAuthorized(address _stakingProvider, uint96 _authorized) external {
         stakingProviderInfo[_stakingProvider].authorized = _authorized;
     }
 
-    function setDecreaseRequest(address _stakingProvideror, uint96 _decreaseRequestTo) external {
+    function setDecreaseRequest(address _stakingProvider, uint96 _decreaseRequestTo) external {
         stakingProviderInfo[_stakingProvider].decreaseRequestTo = _decreaseRequestTo;
     }
 
@@ -111,11 +111,11 @@ contract ThresholdStakingForPREApplicationMock {
         amountToSeize = _amount;
         rewardMultiplier = _rewardMultiplier;
         notifier = _notifier;
-        operatorsToSeize = _operators;
+        stakingProvidersToSeize = _stakingProviders;
     }
 
-    function getLengthOfOperatorsToSeize() external view returns (uint256) {
-        return operatorsToSeize.length;
+    function getLengthOfStakingProvidersToSeize() external view returns (uint256) {
+        return stakingProvidersToSeize.length;
     }
 
     function authorizationIncreased(address _stakingProvider, uint96 _fromAmount, uint96 _toAmount) external {
@@ -203,11 +203,11 @@ contract ExtendedPREApplication is PREApplication {
     }
 
     function testSlash(
-        address _operator,
+        address _stakingProvider,
         uint96 _penalty,
         address _investigator
     ) external {
-        slash(_operator, _penalty, _investigator);
+        slash(_stakingProvider, _penalty, _investigator);
     }
 
 }

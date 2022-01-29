@@ -14,9 +14,9 @@ import "contracts/lib/SignatureVerifier.sol";
 contract ExtendedAdjudicator is Adjudicator {
 
     uint32 public immutable secondsPerPeriod = 1;
-    mapping (address => uint96) public operatorInfo;
+    mapping (address => uint96) public stakingProviderInfo;
     mapping (address => uint256) public rewardInfo;
-    mapping (address => address) _operatorFromWorker;
+    mapping (address => address) _stakingProviderFromOperator;
 
     constructor(
         SignatureVerifier.HashAlgorithm _hashAlgorithm,
@@ -28,30 +28,30 @@ contract ExtendedAdjudicator is Adjudicator {
     {
     }
 
-    function operatorFromWorker(address _worker) public view override returns (address) {
-        return _operatorFromWorker[_worker];
+    function stakingProviderFromOperator(address _operator) public view override returns (address) {
+        return _stakingProviderFromOperator[_operator];
     }
 
-    function setOperatorInfo(address _operator, uint96 _amount, address _worker) public {
-        operatorInfo[_operator] = _amount;
-        if (_worker == address(0)) {
-            _worker = _operator;
+    function setStakingProviderInfo(address _stakingProvider, uint96 _amount, address _operator) public {
+        stakingProviderInfo[_stakingProvider] = _amount;
+        if (_operator == address(0)) {
+            _operator = _stakingProvider;
         }
-        _operatorFromWorker[_worker] = _operator;
+        _stakingProviderFromOperator[_operator] = _stakingProvider;
     }
 
-    function authorizedStake(address _operator) public view override returns (uint96) {
-        return operatorInfo[_operator];
+    function authorizedStake(address _stakingProvider) public view override returns (uint96) {
+        return stakingProviderInfo[_stakingProvider];
     }
 
     function slash(
-        address _operator,
+        address _stakingProvider,
         uint96 _penalty,
         address _investigator
     )
         internal override
     {
-        operatorInfo[_operator] -= _penalty;
+        stakingProviderInfo[_stakingProvider] -= _penalty;
         rewardInfo[_investigator] += 1;
     }
 
