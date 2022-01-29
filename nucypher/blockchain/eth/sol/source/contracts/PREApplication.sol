@@ -323,6 +323,14 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     }
 
     //------------------------Authorization------------------------------
+    /**
+    * @notice Recalculate `authorizedOverall` if desync happened
+    */
+    function resynchronizeAuthorizedOverall(StakingProviderInfo storage _info, uint96 _properAmount) internal {
+        if (_info.authorized != _properAmount) {
+            authorizedOverall -= _info.authorized - _properAmount;
+        }
+    }
 
     /**
     * @notice Recalculate reward and save increased authorization. Can be called only by staking contract
@@ -348,6 +356,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         );
 
         if (info.operatorConfirmed) {
+            resynchronizeAuthorizedOverall(info, _fromAmount);
             authorizedOverall += _toAmount - _fromAmount;
         }
 
@@ -369,12 +378,14 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         external override onlyStakingContract updateReward(_stakingProvider)
     {
         StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
+        if (info.operatorConfirmed) {
+            resynchronizeAuthorizedOverall(info, _fromAmount);
+            authorizedOverall -= _fromAmount - _toAmount;
+        }
+
         info.authorized = _toAmount;
         if (info.authorized < info.deauthorizing) {
             info.deauthorizing = info.authorized;
-        }
-        if (info.operatorConfirmed) {
-            authorizedOverall -= _fromAmount - _toAmount;
         }
         emit AuthorizationInvoluntaryDecreased(_stakingProvider, _fromAmount, _toAmount);
 
@@ -404,6 +415,11 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
             _toAmount == 0 || _toAmount >= minAuthorization,
             "Resulting authorization will be less than minimum"
         );
+        if (info.operatorConfirmed) {
+            resynchronizeAuthorizedOverall(info, _fromAmount);
+        }
+
+        info.authorized = _fromAmount;
         info.deauthorizing = _fromAmount - _toAmount;
         info.endDeauthorization = block.timestamp + deauthorizationDuration;
         emit AuthorizationDecreaseRequested(_stakingProvider, _fromAmount, _toAmount);

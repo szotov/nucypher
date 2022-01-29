@@ -116,6 +116,21 @@ def test_authorization_increase(testerchain, threshold_staking, pre_application,
     assert event_args['fromAmount'] == value
     assert event_args['toAmount'] == authorization
 
+    # Emulate slash and desync by sending smaller fromAmount
+    tx = threshold_staking.functions.authorizationIncreased(staking_provider, value // 2, value).transact()
+    testerchain.wait_for_receipt(tx)
+    assert pre_application.functions.stakingProviderInfo(staking_provider).call()[AUTHORIZATION_SLOT] == value
+    assert pre_application.functions.authorizedOverall().call() == value
+    assert pre_application.functions.authorizedStake(staking_provider).call() == value
+    assert pre_application.functions.isAuthorized(staking_provider).call()
+
+    events = increase_log.get_all_entries()
+    assert len(events) == 4
+    event_args = events[-1]['args']
+    assert event_args['stakingProvider'] == staking_provider
+    assert event_args['fromAmount'] == value // 2
+    assert event_args['toAmount'] == value
+
 
 def test_involuntary_authorization_decrease(testerchain, threshold_staking, pre_application, token_economics):
     """
@@ -218,6 +233,27 @@ def test_involuntary_authorization_decrease(testerchain, threshold_staking, pre_
     assert event_args['fromAmount'] == authorization
     assert event_args['toAmount'] == 0
 
+    # Emulate slash and desync by sending smaller fromAmount
+    tx = threshold_staking.functions.authorizationIncreased(staking_provider, 0, 2 * value).transact()
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.bondOperator(staking_provider, staking_provider).transact({'from': staking_provider})
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.confirmOperatorAddress().transact({'from': staking_provider})
+    testerchain.wait_for_receipt(tx)
+    authorization = value // 2
+    tx = threshold_staking.functions.involuntaryAuthorizationDecrease(staking_provider, value, value // 2).transact()
+    testerchain.wait_for_receipt(tx)
+    assert pre_application.functions.stakingProviderInfo(staking_provider).call()[AUTHORIZATION_SLOT] == authorization
+    assert pre_application.functions.authorizedOverall().call() == authorization
+    assert pre_application.functions.authorizedStake(staking_provider).call() == authorization
+
+    events = involuntary_decrease_log.get_all_entries()
+    assert len(events) == 5
+    event_args = events[-1]['args']
+    assert event_args['stakingProvider'] == staking_provider
+    assert event_args['fromAmount'] == value
+    assert event_args['toAmount'] == authorization
+
 
 def test_authorization_decrease_request(testerchain, threshold_staking, pre_application, token_economics):
     """
@@ -292,6 +328,21 @@ def test_authorization_decrease_request(testerchain, threshold_staking, pre_appl
     event_args = events[-1]['args']
     assert event_args['stakingProvider'] == staking_provider
     assert event_args['fromAmount'] == value
+    assert event_args['toAmount'] == 0
+
+    # Emulate slash and desync by sending smaller fromAmount
+    tx = threshold_staking.functions.authorizationDecreaseRequested(staking_provider, value // 2, 0).transact()
+    testerchain.wait_for_receipt(tx)
+    assert pre_application.functions.stakingProviderInfo(staking_provider).call()[AUTHORIZATION_SLOT] == value // 2
+    assert pre_application.functions.stakingProviderInfo(staking_provider).call()[DEAUTHORIZING_SLOT] == value // 2
+    assert pre_application.functions.authorizedOverall().call() == value // 2
+    assert pre_application.functions.authorizedStake(staking_provider).call() == value // 2
+
+    events = decrease_request_log.get_all_entries()
+    assert len(events) == 3
+    event_args = events[-1]['args']
+    assert event_args['stakingProvider'] == staking_provider
+    assert event_args['fromAmount'] == value // 2
     assert event_args['toAmount'] == 0
 
 
