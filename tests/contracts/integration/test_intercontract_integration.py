@@ -23,7 +23,7 @@ from web3.contract import Contract
 
 from nucypher_core.umbral import SecretKey, Signer
 
-from nucypher.blockchain.economics import BaseEconomics, StandardTokenEconomics
+from nucypher.blockchain.economics import Economics, Economics
 from nucypher.blockchain.eth.constants import NULL_ADDRESS, POLICY_ID_LENGTH
 from nucypher.blockchain.eth.token import NU
 from nucypher.crypto.utils import sha256_digest
@@ -41,38 +41,38 @@ def pytest_namespace():
 
 @pytest.fixture(scope='module')
 def token_economics():
-    economics = StandardTokenEconomics(
-        maximum_allowed_locked=BaseEconomics._default_minimum_allowed_locked * 10
+    economics = Economics(
+        maximum_allowed_locked=Economics._default_minimum_allowed_locked * 10
     )
     return economics
 
 
 @pytest.fixture(scope='module')
-def token(token_economics, deploy_contract):
+def token(application_economics, deploy_contract):
     # Create an ERC20 token
-    contract, _ = deploy_contract('NuCypherToken', _totalSupplyOfTokens=token_economics.erc20_total_supply)
+    contract, _ = deploy_contract('NuCypherToken', _totalSupplyOfTokens=application_economics.erc20_total_supply)
     return contract
 
 
 @pytest.fixture(scope='module')
-def escrow_dispatcher(testerchain, token, token_economics, deploy_contract):
+def escrow_dispatcher(testerchain, token, application_economics, deploy_contract):
     escrow_stub, _ = deploy_contract('StakingEscrowStub',
                                      token.address,
-                                     token_economics.minimum_allowed_locked,
-                                     token_economics.maximum_allowed_locked)
+                                     application_economics.min_authorization,
+                                     application_economics.maximum_allowed_locked)
     dispatcher, _ = deploy_contract('Dispatcher', escrow_stub.address)
     return dispatcher
 
 
 @pytest.fixture(scope='module')
-def worklock(testerchain, token, escrow_dispatcher, token_economics, deploy_contract):
+def worklock(testerchain, token, escrow_dispatcher, application_economics, deploy_contract):
     # Creator deploys the worklock using test values
     now = testerchain.w3.eth.getBlock('latest').timestamp
     start_bid_date = ((now + 3600) // 3600 + 1) * 3600  # beginning of the next hour plus 1 hour
     end_bid_date = start_bid_date + 3600
     end_cancellation_date = end_bid_date + 3600
     boosting_refund = 100
-    staking_periods = token_economics.minimum_locked_periods
+    staking_periods = application_economics.min_operator_seconds
     min_allowed_bid = to_wei(1, 'ether')
     contract, _ = deploy_contract(
         contract_name='WorkLock',
