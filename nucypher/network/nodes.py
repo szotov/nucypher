@@ -1060,32 +1060,19 @@ class Teacher:
         As a follow-up, this checks that the worker is bonded to a staker, but it may be
         the case that the "staker" isn't "staking" (e.g., all her tokens have been slashed).
         """
-        # Lazy agent get or create
-        staking_agent = ContractAgency.get_agent(StakingEscrowAgent, registry=registry)
-
-        staker_address = staking_agent.get_staker_from_worker(worker_address=self.worker_address)
-        if staker_address == NULL_ADDRESS:
-            raise self.UnbondedWorker(f"Worker {self.worker_address} is not bonded")
-        return staker_address == self.checksum_address
+        application_agent = ContractAgency.get_agent(PREApplicationAgent, registry=registry)  # type: PREApplicationAgent
+        staking_provider_address = application_agent.get_staking_provider_from_operator(operator_address=self.operator_address)
+        if staking_provider_address == NULL_ADDRESS:
+            raise self.UnbondedOperator(f"Operator {self.operator_address} is not bonded")
+        return staking_provider_address == self.checksum_address
 
     def _staker_is_really_staking(self, registry: BaseContractRegistry, provider_uri: Optional[str] = None) -> bool:
         """
         This method assumes the stamp's signature is valid and accurate.
         As a follow-up, this checks that the staker is, indeed, staking.
         """
-        # Lazy agent get or create
-        staking_agent = ContractAgency.get_agent(StakingEscrowAgent, registry=registry, provider_uri=provider_uri)  # type: StakingEscrowAgent
-
-        try:
-            economics = EconomicsFactory.get_economics(registry=registry, provider_uri=provider_uri)
-        except Exception:
-            raise  # TODO: Get StandardEconomics  NRN
-
-        min_stake = economics.minimum_allowed_locked
-
-        stake_current_period = staking_agent.get_locked_tokens(staker_address=self.checksum_address, periods=0)
-        stake_next_period = staking_agent.get_locked_tokens(staker_address=self.checksum_address, periods=1)
-        is_staking = max(stake_current_period, stake_next_period) >= min_stake
+        application_agent = ContractAgency.get_agent(PREApplicationAgent, registry=registry, provider_uri=provider_uri)  # type: PREApplicationAgent
+        is_staking = application_agent.is_authorized(staking_provider=self.checksum_address)  # checksum address here is staking provider
         return is_staking
 
     def validate_worker(self, registry: BaseContractRegistry = None, provider_uri: Optional[str] = None) -> None:
@@ -1103,15 +1090,15 @@ class Teacher:
             # Off-chain signature verification
             if not self._stamp_has_valid_signature_by_worker():
                 message = f"Invalid signature {self.__decentralized_identity_evidence.hex()} " \
-                          f"from worker {self.worker_address} for stamp {bytes(self.stamp).hex()} "
-                raise self.InvalidWorkerSignature(message)
+                          f"from worker {self.operator_address} for stamp {bytes(self.stamp).hex()} "
+                raise self.InvalidOperatorSignature(message)
 
             # On-chain staking check, if registry is present
             if registry:
                 if not self._worker_is_bonded_to_staker(registry=registry):  # <-- Blockchain CALL
-                    message = f"Worker {self.worker_address} is not bonded to staker {self.checksum_address}"
+                    message = f"Operator {self.operator_address} is not bonded to staker {self.checksum_address}"
                     self.log.debug(message)
-                    raise self.UnbondedWorker(message)
+                    raise self.UnbondedOperator(message)
 
                 if self._staker_is_really_staking(registry=registry, provider_uri=provider_uri):  # <-- Blockchain CALL
                     self.verified_worker = True
