@@ -44,7 +44,7 @@ from nucypher.blockchain.eth.deployers import (
 from nucypher.blockchain.eth.interfaces import BlockchainInterfaceFactory
 from nucypher.blockchain.eth.registry import InMemoryContractRegistry, LocalContractRegistry
 from nucypher.blockchain.eth.signers.software import Web3Signer
-from nucypher.blockchain.eth.token import NU
+from nucypher.blockchain.eth.token import NU, TToken
 from nucypher.characters.lawful import Enrico
 from nucypher.config.characters import (
     AliceConfiguration,
@@ -106,6 +106,8 @@ from tests.utils.ursula import (
 test_logger = Logger("test-logger")
 
 # defer.setDebugging(True)
+
+TOTAL_SUPPLY = TToken(10_000_000_000, 'T').to_units()
 
 #
 # Temporary
@@ -571,7 +573,7 @@ def deployer_transacting_power(testerchain):
     return transacting_power
 
 
-def _make_agency(test_registry, token_economics, deployer_transacting_power, threshold_staking):
+def _make_agency(test_registry, token_economics, deployer_transacting_power, threshold_staking, t_token):
     transacting_power = deployer_transacting_power
 
     token_deployer = NucypherTokenDeployer(economics=token_economics, registry=test_registry)
@@ -579,7 +581,8 @@ def _make_agency(test_registry, token_economics, deployer_transacting_power, thr
 
     pre_application_deployer = PREApplicationDeployer(economics=token_economics,
                                                       registry=test_registry,
-                                                      staking_interface=threshold_staking.address)
+                                                      staking_interface=threshold_staking.address,
+                                                      t_token=t_token.address)
     pre_application_deployer.deploy(transacting_power=transacting_power)
 
     subscription_manager_deployer = SubscriptionManagerDeployer(economics=token_economics, registry=test_registry)
@@ -597,11 +600,13 @@ def agency(test_registry,
            application_economics,
            test_registry_source_manager,
            deployer_transacting_power,
-           threshold_staking):
+           threshold_staking,
+           t_token):
     _make_agency(test_registry=test_registry,
                  token_economics=application_economics,
                  deployer_transacting_power=deployer_transacting_power,
-                 threshold_staking=threshold_staking)
+                 threshold_staking=threshold_staking,
+                 t_token=t_token)
 
 
 @pytest.fixture(scope='module')
@@ -617,6 +622,12 @@ def agency_local_registry(testerchain, agency, test_registry):
 def threshold_staking(deploy_contract):
     threshold_staking, _ = deploy_contract('ThresholdStakingForPREApplicationMock')
     yield threshold_staking
+
+
+@pytest.fixture(scope='module')
+def t_token(deploy_contract):
+    t_token, _ = deploy_contract('TToken', TOTAL_SUPPLY)
+    return t_token
 
 
 @pytest.fixture(scope="module")

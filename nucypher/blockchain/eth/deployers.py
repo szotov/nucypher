@@ -758,142 +758,21 @@ class SubscriptionManagerDeployer(BaseContractDeployer, OwnableContractMixin):
                 self.deployment_steps[1]: initialize_receipt}
 
 
-class AdjudicatorDeployer(BaseContractDeployer, UpgradeableContractMixin, OwnableContractMixin):
-
-    agency = AdjudicatorAgent
-    contract_name = agency.contract_name
-    deployment_steps = ('contract_deployment', 'dispatcher_deployment')
-    _proxy_deployer = DispatcherDeployer
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        staking_contract_name = StakingEscrowDeployer.contract_name
-        proxy_name = StakingEscrowDeployer._proxy_deployer.contract_name
-        try:
-            self.staking_contract = self.blockchain.get_contract_by_name(registry=self.registry,
-                                                                         contract_name=staking_contract_name,
-                                                                         proxy_name=proxy_name)
-        except self.registry.UnknownContract:
-            staking_contract_name = StakingEscrowDeployer.contract_name_stub
-            self.staking_contract = self.blockchain.get_contract_by_name(registry=self.registry,
-                                                                         contract_name=staking_contract_name,
-                                                                         proxy_name=proxy_name)
-
-    def check_deployment_readiness(self, deployer_address: ChecksumAddress, *args, **kwargs) -> Tuple[bool, list]:
-        staking_escrow_owner = self.staking_contract.functions.owner().call()
-        adjudicator_deployment_rules = [
-            (deployer_address == staking_escrow_owner,
-             f'{self.contract_name} must be deployed by the owner of {STAKING_ESCROW_CONTRACT_NAME} ({staking_escrow_owner})')
-        ]
-        return super().check_deployment_readiness(deployer_address=deployer_address,
-                                                  additional_rules=adjudicator_deployment_rules,
-                                                  *args, **kwargs)
-
-    def _deploy_essential(self,
-                          transacting_power: TransactingPower,
-                          contract_version: str,
-                          gas_limit: int = None,
-                          confirmations: int = 0,
-                          **overrides):
-        args = self.economics.slashing_deployment_parameters
-        constructor_kwargs = {
-            "_hashAlgorithm": args[0],
-            "_basePenalty": args[1],
-            "_penaltyHistoryCoefficient": args[2],
-            "_percentagePenaltyCoefficient": args[3],
-            "_rewardCoefficient": args[4]
-        }
-        constructor_kwargs.update(overrides)
-        constructor_kwargs = {k: v for k, v in constructor_kwargs.items() if v is not None}
-        # Force use of the escrow address from the registry
-        constructor_kwargs.update({"_escrow": self.staking_contract.address})
-        adjudicator_contract, deploy_receipt = self.blockchain.deploy_contract(transacting_power,
-                                                                               self.registry,
-                                                                               self.contract_name,
-                                                                               gas_limit=gas_limit,
-                                                                               confirmations=confirmations,
-                                                                               contract_version=contract_version,
-                                                                               **constructor_kwargs)
-        return adjudicator_contract, deploy_receipt
-
-    def deploy(self,
-               transacting_power: TransactingPower,
-               deployment_mode=FULL,
-               gas_limit: int = None,
-               progress=None,
-               contract_version: str = "latest",
-               ignore_deployed: bool = False,
-               emitter=None,
-               confirmations: int = 0,
-               **overrides) -> Dict[str, str]:
-
-        if deployment_mode not in (BARE, IDLE, FULL):
-            raise ValueError(f"Invalid deployment mode ({deployment_mode})")
-
-        self.check_deployment_readiness(deployer_address=transacting_power.account,
-                                        contract_version=contract_version,
-                                        ignore_deployed=ignore_deployed)
-
-        # 1 - Deploy Contract
-        if emitter:
-            emitter.message(f"\nNext Transaction: {self.contract_name} Contract Creation", color='blue', bold=True)
-        adjudicator_contract, deploy_receipt = self._deploy_essential(transacting_power=transacting_power,
-                                                                      contract_version=contract_version,
-                                                                      gas_limit=gas_limit,
-                                                                      confirmations=confirmations,
-                                                                      **overrides)
-
-        # This is the end of bare deployment.
-        if deployment_mode is BARE:
-            self._contract = adjudicator_contract
-            return self._finish_bare_deployment(deployment_receipt=deploy_receipt,
-                                                progress=progress)
-
-        if progress:
-            progress.update(1)
-
-        # 2 - Deploy Proxy
-        if emitter:
-            emitter.message(f"\nNext Transaction: {self._proxy_deployer.contract_name} Contract Creation for {self.contract_name}", color='blue', bold=True)
-        proxy_deployer = self._proxy_deployer(registry=self.registry, target_contract=adjudicator_contract)
-
-        proxy_deploy_receipts = proxy_deployer.deploy(transacting_power=transacting_power,
-                                                      gas_limit=gas_limit, 
-                                                      confirmations=confirmations)
-        proxy_deploy_receipt = proxy_deploy_receipts[proxy_deployer.deployment_steps[0]]
-        if progress:
-            progress.update(1)
-
-        # Cache the dispatcher contract
-        proxy_contract = proxy_deployer.contract
-        self.__proxy_contract = proxy_contract
-
-        # Wrap the escrow contract
-        wrapped = self.blockchain._wrap_contract(proxy_contract, target_contract=adjudicator_contract)
-
-        # Switch the contract for the wrapped one
-        adjudicator_contract = wrapped
-
-        # Gather the transaction receipts
-        ordered_receipts = (deploy_receipt, proxy_deploy_receipt)
-        deployment_receipts = dict(zip(self.deployment_steps, ordered_receipts))
-
-        self.deployment_receipts = deployment_receipts
-        self._contract = adjudicator_contract
-
-        return deployment_receipts
-
-
-class PREApplicationDeployer(BaseContractDeployer):
+class PREApplicationDeployer(BaseContractDeployer, OwnableContractMixin):
 
     agency = PREApplicationAgent
     contract_name = agency.contract_name
     deployment_steps = ('contract_deployment', )
     _upgradeable = False
+    _ownable = True
 
-    def __init__(self, staking_interface: ChecksumAddress = None, *args, **kwargs):
+    def __init__(self,
+                 staking_interface: ChecksumAddress = None,
+                 t_token: ChecksumAddress = None,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.threshold_staking_interface = staking_interface
+        self.t_token = t_token
 
     def _deploy_essential(self,
                           transacting_power: TransactingPower,
@@ -901,9 +780,16 @@ class PREApplicationDeployer(BaseContractDeployer):
                           confirmations: int = 0,
                           **overrides):
         constructor_kwargs = {}
-        constructor_kwargs.update({"_minAuthorization": self.economics.min_authorization,
+        constructor_kwargs.update({"_hashAlgorithm": self.economics.hash_algorithm,
+                                   "_basePenalty": self.economics.base_penalty,
+                                   "_penaltyHistoryCoefficient": self.economics.penalty_history_coefficient,
+                                   "_percentagePenaltyCoefficient": self.economics.percentage_penalty_coefficient,
+                                   "_minAuthorization": self.economics.min_authorization,
                                    "_minOperatorSeconds": self.economics.min_operator_seconds,
-                                   "_tStaking": self.threshold_staking_interface})
+                                   "_rewardDuration": self.economics.reward_duration,
+                                   "_deauthorizationDuration": self.economics.deauthorization_duration,
+                                   "_tStaking": self.threshold_staking_interface,
+                                   "_token": self.t_token})
         constructor_kwargs.update(overrides)
         constructor_kwargs = {k: v for k, v in constructor_kwargs.items() if v is not None}
         the_escrow_contract, deploy_receipt = self.blockchain.deploy_contract(

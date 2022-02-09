@@ -18,6 +18,7 @@ along with nucypher.  If not, see <https://www.gnu.org/licenses/>.
 
 import pytest
 
+from nucypher.blockchain.eth.token import TToken
 from tests.constants import (
     TEST_ETH_PROVIDER_URI,
 )
@@ -25,10 +26,14 @@ from tests.utils.ursula import MOCK_URSULA_STARTING_PORT
 from tests.utils.config import make_ursula_test_configuration
 from nucypher.blockchain.eth.registry import InMemoryContractRegistry
 
+
+TOTAL_SUPPLY = TToken(10_000_000_000, 'T').to_units()
+
+
 @pytest.fixture()
-def token(deploy_contract, token_economics):
+def token(deploy_contract):
     # Create an ERC20 token
-    token, _ = deploy_contract('TToken', _totalSupplyOfTokens=token_economics.erc20_total_supply)
+    token, _ = deploy_contract('TToken', _totalSupplyOfTokens=TOTAL_SUPPLY)
     return token
 
 
@@ -40,20 +45,12 @@ def threshold_staking(deploy_contract):
 
 @pytest.fixture()
 def pre_application(testerchain, token, threshold_staking, deploy_contract, application_economics):
-    min_authorization = application_economics.min_authorization
-    min_operator_seconds = application_economics.min_operator_seconds
-    reward_duration = 60 * 60
-    deauthorization_duration = 60 * 60
     # Creator deploys the PRE application
     contract, _ = deploy_contract(
         'ExtendedPREApplication',
-        *token_economics.slashing_deployment_parameters,
         token.address,
         threshold_staking.address,
-        reward_duration,
-        deauthorization_duration,
-        min_authorization,
-        min_operator_seconds
+        *application_economics.pre_application_deployment_parameters
     )
 
     tx = contract.functions.initialize().transact()

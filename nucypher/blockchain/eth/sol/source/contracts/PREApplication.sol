@@ -140,28 +140,28 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
 
     /**
     * @notice Constructor sets address of token contract and parameters for staking
+    * @param _token T token contract
+    * @param _tStaking T token staking contract
     * @param _hashAlgorithm Hashing algorithm
     * @param _basePenalty Base for the penalty calculation
     * @param _penaltyHistoryCoefficient Coefficient for calculating the penalty depending on the history
     * @param _percentagePenaltyCoefficient Coefficient for calculating the percentage penalty
-    * @param _token T token contract
-    * @param _tStaking T token staking contract
-    * @param _rewardDuration Duration of one reward cycle
-    * @param _deauthorizationDuration Duration of decreasing authorization
     * @param _minAuthorization Amount of minimum allowable authorization
     * @param _minOperatorSeconds Min amount of seconds while an operator can't be changed
+    * @param _rewardDuration Duration of one reward cycle
+    * @param _deauthorizationDuration Duration of decreasing authorization
     */
     constructor(
+        IERC20 _token,
+        IStaking _tStaking,
         SignatureVerifier.HashAlgorithm _hashAlgorithm,
         uint256 _basePenalty,
         uint256 _penaltyHistoryCoefficient,
         uint256 _percentagePenaltyCoefficient,
-        IERC20 _token,
-        IStaking _tStaking,
-        uint256 _rewardDuration,
-        uint256 _deauthorizationDuration,
         uint256 _minAuthorization,
-        uint256 _minOperatorSeconds
+        uint256 _minOperatorSeconds,
+        uint256 _rewardDuration,
+        uint256 _deauthorizationDuration
     )
         Adjudicator(
             _hashAlgorithm,

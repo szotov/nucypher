@@ -27,8 +27,10 @@ from nucypher.blockchain.eth.deployers import PREApplicationDeployer
 def pre_application_deployer(testerchain,
                              test_registry,
                              application_economics,
-                             threshold_staking):
+                             threshold_staking,
+                             t_token):
     pre_application_deployer = PREApplicationDeployer(staking_interface=threshold_staking.address,
+                                                      t_token=t_token.address,
                                                       registry=test_registry,
                                                       economics=application_economics)
     return pre_application_deployer

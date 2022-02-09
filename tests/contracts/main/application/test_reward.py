@@ -24,14 +24,14 @@ from eth_utils import to_checksum_address
 
 REWARDS_SLOT = 4
 REWARDS_PAID_SLOT = 5
-ERROR = 1e5
+ERROR = 1e6
 
 
-def test_push_reward(testerchain, token, threshold_staking, pre_application, token_economics):
+def test_push_reward(testerchain, token, threshold_staking, pre_application, application_economics):
     creator, distributor, staking_provider_1, staking_provider_2, *everyone_else = testerchain.client.accounts
-    min_authorization = token_economics.minimum_allowed_locked
+    min_authorization = application_economics.min_authorization
     reward_portion = min_authorization
-    reward_duration = 60 * 60
+    reward_duration = application_economics.reward_duration
     value = int(1.5 * min_authorization)
 
     rewards_log = pre_application.events.RewardAdded.createFilter(fromBlock='latest')
@@ -150,7 +150,7 @@ def test_push_reward(testerchain, token, threshold_staking, pre_application, tok
     assert abs(reward_per_token - expected_reward_per_token) <= 100
     expected_reward = reward_portion
     reward = pre_application.functions.earned(staking_provider_1).call()
-    assert abs(reward - expected_reward) <= 1e5
+    assert abs(reward - expected_reward) <= ERROR
 
     # Add another staking provider without confirmation and push reward again
     tx = threshold_staking.functions.authorizationIncreased(staking_provider_2, 0, value).transact()
@@ -179,13 +179,13 @@ def test_push_reward(testerchain, token, threshold_staking, pre_application, tok
     assert pre_application.functions.earned(staking_provider_2).call() == 0
 
 
-def test_update_reward(testerchain, token, threshold_staking, pre_application, token_economics):
+def test_update_reward(testerchain, token, threshold_staking, pre_application, application_economics):
     creator, distributor, staking_provider_1, staking_provider_2, *everyone_else = testerchain.client.accounts
-    min_authorization = token_economics.minimum_allowed_locked
+    min_authorization = application_economics.min_authorization
     reward_portion = min_authorization
-    reward_duration = 60 * 60
-    deauthorization_duration = 60 * 60
-    min_operator_seconds = 24 * 60 * 60
+    reward_duration = application_economics.reward_duration
+    deauthorization_duration = application_economics.deauthorization_duration
+    min_operator_seconds = application_economics.min_operator_seconds
     value = int(1.5 * min_authorization)
 
     reward_per_token = 0
@@ -371,13 +371,13 @@ def test_update_reward(testerchain, token, threshold_staking, pre_application, t
     assert pre_application.functions.stakingProviderInfo(staking_provider_2).call()[REWARDS_PAID_SLOT] == reward_per_token
 
 
-def test_withdraw(testerchain, token, threshold_staking, pre_application, token_economics):
+def test_withdraw(testerchain, token, threshold_staking, pre_application, application_economics):
     creator, distributor, staking_provider, owner, beneficiary, authorizer, staking_provider_2, \
         *everyone_else = testerchain.client.accounts
-    min_authorization = token_economics.minimum_allowed_locked
+    min_authorization = application_economics.min_authorization
     reward_portion = min_authorization
-    reward_duration = 60 * 60
-    min_operator_seconds = 24 * 60 * 60
+    reward_duration = application_economics.reward_duration
+    min_operator_seconds = application_economics.min_operator_seconds
     value = int(1.5 * min_authorization)
 
     withdrawals_log = pre_application.events.RewardPaid.createFilter(fromBlock='latest')

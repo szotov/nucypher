@@ -176,28 +176,28 @@ contract Intermediary {
 contract ExtendedPREApplication is PREApplication {
 
     constructor(
+        IERC20 _token,
+        IStaking _tStaking,
         SignatureVerifier.HashAlgorithm _hashAlgorithm,
         uint256 _basePenalty,
         uint256 _penaltyHistoryCoefficient,
         uint256 _percentagePenaltyCoefficient,
-        IERC20 _token,
-        IStaking _tStaking,
-        uint256 _rewardDuration,
-        uint256 _deauthorizationDuration,
         uint256 _minAuthorization,
-        uint256 _minWorkerSeconds
+        uint256 _minWorkerSeconds,
+        uint256 _rewardDuration,
+        uint256 _deauthorizationDuration
     )
         PREApplication(
+            _token,
+            _tStaking,
             _hashAlgorithm,
             _basePenalty,
             _penaltyHistoryCoefficient,
             _percentagePenaltyCoefficient,
-            _token,
-            _tStaking,
-            _rewardDuration,
-            _deauthorizationDuration,
             _minAuthorization,
-            _minWorkerSeconds
+            _minWorkerSeconds,
+            _rewardDuration,
+            _deauthorizationDuration
         )
     {
     }

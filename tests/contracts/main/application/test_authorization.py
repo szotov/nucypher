@@ -27,7 +27,7 @@ DEAUTHORIZING_SLOT = 6
 END_DEAUTHORIZATION_SLOT = 7
 
 
-def test_authorization_increase(testerchain, threshold_staking, pre_application, token_economics):
+def test_authorization_increase(testerchain, threshold_staking, pre_application, application_economics):
     """
     Tests for authorization method: authorizationIncreased
     """
@@ -35,7 +35,7 @@ def test_authorization_increase(testerchain, threshold_staking, pre_application,
     creator, staking_provider = testerchain.client.accounts[0:2]
     increase_log = pre_application.events.AuthorizationIncreased.createFilter(fromBlock='latest')
 
-    minimum_authorization = token_economics.minimum_allowed_locked  # TODO
+    minimum_authorization = application_economics.min_authorization
     value = minimum_authorization
 
     # Can't call `authorizationIncreased` directly
@@ -132,7 +132,7 @@ def test_authorization_increase(testerchain, threshold_staking, pre_application,
     assert event_args['toAmount'] == value
 
 
-def test_involuntary_authorization_decrease(testerchain, threshold_staking, pre_application, token_economics):
+def test_involuntary_authorization_decrease(testerchain, threshold_staking, pre_application, application_economics):
     """
     Tests for authorization method: involuntaryAuthorizationDecrease
     """
@@ -140,7 +140,7 @@ def test_involuntary_authorization_decrease(testerchain, threshold_staking, pre_
     creator, staking_provider = testerchain.client.accounts[0:2]
     involuntary_decrease_log = pre_application.events.AuthorizationInvoluntaryDecreased.createFilter(fromBlock='latest')
 
-    minimum_authorization = token_economics.minimum_allowed_locked  # TODO
+    minimum_authorization = application_economics.min_authorization
     value = minimum_authorization
 
     # Prepare staking providers
@@ -255,7 +255,7 @@ def test_involuntary_authorization_decrease(testerchain, threshold_staking, pre_
     assert event_args['toAmount'] == authorization
 
 
-def test_authorization_decrease_request(testerchain, threshold_staking, pre_application, token_economics):
+def test_authorization_decrease_request(testerchain, threshold_staking, pre_application, application_economics):
     """
     Tests for authorization method: authorizationDecreaseRequested
     """
@@ -263,8 +263,8 @@ def test_authorization_decrease_request(testerchain, threshold_staking, pre_appl
     creator, staking_provider = testerchain.client.accounts[0:2]
     decrease_request_log = pre_application.events.AuthorizationDecreaseRequested.createFilter(fromBlock='latest')
 
-    deauthorization_duration = 60 * 60
-    minimum_authorization = token_economics.minimum_allowed_locked  # TODO
+    deauthorization_duration = application_economics.deauthorization_duration
+    minimum_authorization = application_economics.min_authorization
     value = 2 * minimum_authorization + 1
 
     # Prepare staking providers
@@ -346,7 +346,7 @@ def test_authorization_decrease_request(testerchain, threshold_staking, pre_appl
     assert event_args['toAmount'] == 0
 
 
-def test_finish_authorization_decrease(testerchain, threshold_staking, pre_application, token_economics):
+def test_finish_authorization_decrease(testerchain, threshold_staking, pre_application, application_economics):
     """
     Tests for authorization method: finishAuthorizationDecrease
     """
@@ -354,8 +354,8 @@ def test_finish_authorization_decrease(testerchain, threshold_staking, pre_appli
     creator, staking_provider = testerchain.client.accounts[0:2]
     decrease_log = pre_application.events.AuthorizationDecreaseApproved.createFilter(fromBlock='latest')
 
-    deauthorization_duration = 60 * 60
-    minimum_authorization = token_economics.minimum_allowed_locked  # TODO
+    deauthorization_duration = application_economics.deauthorization_duration
+    minimum_authorization = application_economics.min_authorization
     value = 3 * minimum_authorization
 
     # Prepare staking providers
@@ -456,7 +456,7 @@ def test_finish_authorization_decrease(testerchain, threshold_staking, pre_appli
     assert event_args['toAmount'] == 0
 
 
-def test_resync(testerchain, threshold_staking, pre_application, token_economics):
+def test_resync(testerchain, threshold_staking, pre_application, application_economics):
     """
     Tests for authorization method: resynchronizeAuthorization
     """
@@ -464,7 +464,7 @@ def test_resync(testerchain, threshold_staking, pre_application, token_economics
     creator, staking_provider = testerchain.client.accounts[0:2]
     resync_log = pre_application.events.AuthorizationReSynchronized.createFilter(fromBlock='latest')
 
-    minimum_authorization = token_economics.minimum_allowed_locked  # TODO
+    minimum_authorization = application_economics.min_authorization
     value = 3 * minimum_authorization
 
     # Nothing sync for not staking provider

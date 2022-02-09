@@ -155,7 +155,6 @@ class ContractAdministrator(BaseActor):
     )
 
     dispatched_upgradeable_deployer_classes = (
-        AdjudicatorDeployer,
     )
 
     upgradeable_deployer_classes = (

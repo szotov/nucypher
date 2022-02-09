@@ -378,9 +378,9 @@ def test_confirm_address(testerchain, threshold_staking, pre_application, applic
         testerchain.wait_for_receipt(tx)
 
 
-def test_slash(testerchain, threshold_staking, pre_application, token_economics):
+def test_slash(testerchain, threshold_staking, pre_application, application_economics):
     creator, staking_provider, investigator, *everyone_else = testerchain.client.accounts
-    min_authorization = token_economics.minimum_allowed_locked
+    min_authorization = application_economics.min_authorization
     penalty = min_authorization
 
     tx = pre_application.functions.testSlash(staking_provider, penalty, investigator).transact()
