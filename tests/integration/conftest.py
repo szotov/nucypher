@@ -23,7 +23,6 @@ from eth_account.account import Account
 
 from nucypher.blockchain.economics import EconomicsFactory
 from nucypher.blockchain.eth.agents import (
-    AdjudicatorAgent,
     ContractAgency,
     PREApplicationAgent
 )
@@ -64,12 +63,6 @@ def mock_application_agent(mock_testerchain, application_economics, mock_contrac
     # Handle the special case of commit_to_next_period, which returns a txhash due to the fire_and_forget option
     mock_agent.confirm_operator_address = mocker.Mock(return_value=MockContractAgent.FAKE_TX_HASH)
 
-    yield mock_agent
-    mock_agent.reset()
-
-
-def mock_adjudicator_agent(mock_testerchain, application_economics, mock_contract_agency):
-    mock_agent = mock_contract_agency.get_agent(AdjudicatorAgent)
     yield mock_agent
     mock_agent.reset()
 

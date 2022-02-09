@@ -194,7 +194,7 @@ def test_upgradeability(temp_dir_path):
                                              signer=Web3Signer(blockchain_interface.client),
                                              account=origin)
 
-        economics = make_token_economics(blockchain_interface)
+        economics = Economics()
 
         # Check contracts with multiple versions
         contract_name = StakingEscrowDeployer.contract_name

@@ -20,11 +20,9 @@ from pathlib import Path
 import pytest
 
 from nucypher.blockchain.eth.agents import (
-    AdjudicatorAgent,
     ContractAgency,
 )
 from nucypher.blockchain.eth.constants import (
-    ADJUDICATOR_CONTRACT_NAME,
     DISPATCHER_CONTRACT_NAME,
     NUCYPHER_TOKEN_CONTRACT_NAME,
     STAKING_ESCROW_CONTRACT_NAME,
@@ -61,7 +59,6 @@ def test_nucypher_deploy_inspect_no_deployments(click_runner, testerchain, new_l
 def test_nucypher_deploy_inspect_fully_deployed(click_runner, agency_local_registry):
 
     staking_agent = ContractAgency.get_agent(StakingEscrowAgent, registry=agency_local_registry)
-    adjudicator_agent = ContractAgency.get_agent(AdjudicatorAgent, registry=agency_local_registry)
 
     status_command = ('inspect',
                       '--registry-infile', str(agency_local_registry.filepath.absolute()),
@@ -73,7 +70,6 @@ def test_nucypher_deploy_inspect_fully_deployed(click_runner, agency_local_regis
                                  catch_exceptions=False)
     assert result.exit_code == 0
     assert staking_agent.owner in result.output
-    assert adjudicator_agent.owner in result.output
 
     minimum, default, maximum = 10, 10, 10
     assert 'Range' in result.output
@@ -86,10 +82,8 @@ def test_nucypher_deploy_inspect_fully_deployed(click_runner, agency_local_regis
 def test_transfer_ownership(click_runner, testerchain, agency_local_registry):
 
     staking_agent = ContractAgency.get_agent(StakingEscrowAgent, registry=agency_local_registry)
-    adjudicator_agent = ContractAgency.get_agent(AdjudicatorAgent, registry=agency_local_registry)
 
     assert staking_agent.owner == testerchain.etherbase_account
-    assert adjudicator_agent.owner == testerchain.etherbase_account
 
     maclane = testerchain.unassigned_accounts[0]
 
@@ -112,7 +106,6 @@ def test_transfer_ownership(click_runner, testerchain, agency_local_registry):
     assert result.exit_code == 0
 
     assert staking_agent.owner == maclane
-    assert adjudicator_agent.owner == testerchain.etherbase_account
 
     michwill = testerchain.unassigned_accounts[1]
 
@@ -133,7 +126,6 @@ def test_transfer_ownership(click_runner, testerchain, agency_local_registry):
     assert result.exit_code == 0
     assert staking_agent.owner != maclane
     assert staking_agent.owner == michwill
-    assert adjudicator_agent.owner == testerchain.etherbase_account
 
 
 def test_bare_contract_deployment_to_alternate_registry(click_runner, agency_local_registry):
@@ -243,20 +235,6 @@ def test_manual_deployment_of_idle_network(click_runner):
     assert result.exit_code == 0
 
     deployed_contracts.extend([STAKING_ESCROW_STUB_CONTRACT_NAME, DISPATCHER_CONTRACT_NAME])
-    assert list(new_registry.enrolled_names) == deployed_contracts
-
-    # 4. Deploy Adjudicator
-    command = ('contracts',
-               '--contract-name', ADJUDICATOR_CONTRACT_NAME,
-               '--eth-provider', TEST_ETH_PROVIDER_URI,
-               '--signer', TEST_ETH_PROVIDER_URI,
-               '--network', TEMPORARY_DOMAIN,
-               '--registry-infile', str(ALTERNATE_REGISTRY_FILEPATH_2.absolute()))
-
-    result = click_runner.invoke(deploy, command, input=user_input, catch_exceptions=False)
-    assert result.exit_code == 0
-
-    deployed_contracts.extend([ADJUDICATOR_CONTRACT_NAME, DISPATCHER_CONTRACT_NAME])
     assert list(new_registry.enrolled_names) == deployed_contracts
 
     # 5. Deploy StakingEscrow in IDLE mode

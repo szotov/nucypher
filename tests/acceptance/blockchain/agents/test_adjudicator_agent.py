@@ -22,7 +22,6 @@ from nucypher_core.umbral import SecretKeyFactory, Signer
 
 from nucypher.blockchain.eth.actors import NucypherTokenActor
 from nucypher.blockchain.eth.agents import (
-    AdjudicatorAgent,
     ContractAgency,
     NucypherTokenAgent
 )

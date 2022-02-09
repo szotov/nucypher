@@ -41,7 +41,8 @@ def test_pre_application_deployment(pre_application_deployer,
                                     test_registry,
                                     testerchain,
                                     transacting_power,
-                                    threshold_staking):
+                                    threshold_staking,
+                                    t_token):
 
     # Deploy
     assert pre_application_deployer.contract_name == PRE_APPLICATION_CONTRACT_NAME
@@ -59,6 +60,8 @@ def test_pre_application_deployment(pre_application_deployer,
     # Ensure the correct staking escrow address is set
     threshold_staking_address = pre_application_deployer.contract.functions.tStaking().call()
     assert threshold_staking.address == threshold_staking_address
+    t_token_address = pre_application_deployer.contract.functions.token().call()
+    assert t_token.address == t_token_address
 
 
 def test_make_agent(pre_application_deployer, test_registry):
@@ -75,6 +78,10 @@ def test_make_agent(pre_application_deployer, test_registry):
 def test_deployment_parameters(pre_application_deployer, test_registry, application_economics):
 
     # Ensure restoration of deployment parameters
-    agent = pre_application_deployer.make_agent()
+    agent: PREApplicationAgent = pre_application_deployer.make_agent()
     assert agent.get_min_authorization() == application_economics.min_authorization
     assert agent.get_min_operator_seconds() == application_economics.min_operator_seconds
+    assert agent.hash_algorithm == application_economics.hash_algorithm
+    assert agent.base_penalty == application_economics.base_penalty
+    assert agent.penalty_history_coefficient == application_economics.penalty_history_coefficient
+    assert agent.percentage_penalty_coefficient == application_economics.percentage_penalty_coefficient

@@ -22,7 +22,6 @@ import re
 import pytest
 
 from nucypher.blockchain.eth.agents import (
-    AdjudicatorAgent,
     ContractAgency,
     NucypherTokenAgent,
 )
@@ -45,9 +44,8 @@ def test_nucypher_status_network(click_runner, testerchain, agency_local_registr
 
     token_agent = ContractAgency.get_agent(NucypherTokenAgent, registry=agency_local_registry)
     staking_agent = ContractAgency.get_agent(StakingEscrowAgent, registry=agency_local_registry)
-    adjudicator_agent = ContractAgency.get_agent(AdjudicatorAgent, registry=agency_local_registry)
 
-    agents = (token_agent, staking_agent, adjudicator_agent)
+    agents = (token_agent, staking_agent)
     for agent in agents:
         contract_regex = f"^{agent.contract_name} \\.+ {agent.contract_address}"
         assert re.search(contract_regex, result.output, re.MULTILINE)

@@ -31,7 +31,6 @@ from web3.contract import Contract
 
 from nucypher.blockchain.economics import Economics
 from nucypher.blockchain.eth.agents import (
-    AdjudicatorAgent,
     EthereumContractAgent,
     NucypherTokenAgent,
     PREApplicationAgent,
