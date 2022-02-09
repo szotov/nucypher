@@ -588,6 +588,9 @@ def _make_agency(test_registry, token_economics, deployer_transacting_power, thr
     subscription_manager_deployer = SubscriptionManagerDeployer(economics=token_economics, registry=test_registry)
     subscription_manager_deployer.deploy(transacting_power=transacting_power)
 
+    tx = threshold_staking.functions.setApplication(pre_application_deployer.contract_address).transact()
+    pre_application_deployer.blockchain.wait_for_receipt(tx)
+
 
 @pytest.fixture(scope='module')
 def test_registry_source_manager(test_registry):
@@ -646,7 +649,7 @@ def staking_providers(testerchain, agency, test_registry, threshold_staking):
         # initialize threshold stake
         tx = threshold_staking.functions.setRoles(provider_address).transact()
         testerchain.wait_for_receipt(tx)
-        tx = threshold_staking.functions.setStakes(provider_address, amount, 0, 0).transact()
+        tx = threshold_staking.functions.authorizationIncreased(provider_address, 0, amount).transact()
         testerchain.wait_for_receipt(tx)
 
         # We assume that the staking provider knows in advance the account of her operator

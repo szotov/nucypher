@@ -195,7 +195,7 @@ def test_ursula_operator_confirmation(ursula_decentralized_test_config,
     # make an staking_providers and some stakes
     tx = threshold_staking.functions.setRoles(staking_provider).transact()
     testerchain.wait_for_receipt(tx)
-    tx = threshold_staking.functions.setStakes(staking_provider, min_authorization, 0, 0).transact()
+    tx = threshold_staking.functions.authorizationIncreased(staking_provider, 0, min_authorization).transact()
     testerchain.wait_for_receipt(tx)
 
     # make an ursula.
@@ -246,7 +246,7 @@ def test_ursula_operator_confirmation_autopilot(mocker,
     # make an staking_providers and some stakes
     tx = threshold_staking.functions.setRoles(staking_provider2).transact()
     testerchain.wait_for_receipt(tx)
-    tx = threshold_staking.functions.setStakes(staking_provider2, min_authorization, 0, 0).transact()
+    tx = threshold_staking.functions.authorizationIncreased(staking_provider2, 0, min_authorization).transact()
     testerchain.wait_for_receipt(tx)
 
     # now lets bond this worker
