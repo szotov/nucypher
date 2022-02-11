@@ -30,7 +30,7 @@ CONTRACTS = {
     'token': ['NuCypherToken',
               'TokenRecipient'],
     'main':  ['StakingEscrow',
-              'SimplePREApplication',  # TODO change to PREApplication when ready
+              'PREApplication',
               'Adjudicator'],
     'proxy': ['Dispatcher',
               'Upgradeable'],
