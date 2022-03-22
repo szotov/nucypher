@@ -42,7 +42,7 @@ from nucypher.blockchain.eth.deployers import (
     BaseContractDeployer,
     NucypherTokenDeployer,
     PREApplicationDeployer,
-    SubscriptionManagerDeployer, AdjudicatorDeployer
+    SubscriptionManagerDeployer,
 )
 from nucypher.blockchain.eth.interfaces import BlockchainInterfaceFactory
 from nucypher.blockchain.eth.registry import BaseContractRegistry
