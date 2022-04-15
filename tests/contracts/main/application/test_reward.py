@@ -22,8 +22,8 @@ from nucypher.blockchain.eth.constants import NULL_ADDRESS
 from eth_utils import to_checksum_address
 
 
-REWARDS_SLOT = 4
-REWARDS_PAID_SLOT = 5
+REWARDS_SLOT = 6
+REWARDS_PAID_SLOT = 7
 ERROR = 1e6
 
 

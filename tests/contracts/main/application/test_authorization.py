@@ -23,8 +23,8 @@ from nucypher.blockchain.eth.token import NU
 
 
 AUTHORIZATION_SLOT = 3
-DEAUTHORIZING_SLOT = 6
-END_DEAUTHORIZATION_SLOT = 7
+DEAUTHORIZING_SLOT = 4
+END_DEAUTHORIZATION_SLOT = 5
 
 
 def test_authorization_increase(testerchain, threshold_staking, pre_application, application_economics):

@@ -87,7 +87,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     * @param stakingProvider Staking provider address
     * @param penalty Slashing penalty
     * @param investigator Investigator address
-    * @param reward Value of reward provided to investigator (in NuNits)
+    * @param reward Value of reward provided to investigator (in units of T)
     */
     event Slashed(address indexed stakingProvider, uint256 penalty, address indexed investigator, uint256 reward);
 
@@ -109,14 +109,14 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     struct StakingProviderInfo {
         address operator;
         bool operatorConfirmed;
-        uint256 operatorStartTimestamp;
+        uint64 operatorStartTimestamp;
 
         uint96 authorized;
+        uint96 deauthorizing; // TODO real usage only in getActiveStakingProviders, maybe remove?
+        uint64 endDeauthorization;
+
         uint96 tReward;
         uint96 rewardPerTokenPaid;
-
-        uint96 deauthorizing; // TODO real usage only in getActiveStakingProviders, maybe remove?
-        uint256 endDeauthorization;
     }
 
     uint256 public immutable minAuthorization;
@@ -291,7 +291,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     * @param _reward Amount of reward
     */
     function pushReward(uint96 _reward) external updateReward(address(0)) {
-        require(msg.sender == rewardDistributor, "Only distributor can transfer reward");
+        require(msg.sender == rewardDistributor, "Only distributor can push rewards");
         require(_reward > 0, "Reward must be specified");
         if (block.timestamp >= periodFinish) {
             rewardRate = (_reward / rewardDuration).toUint96();
@@ -421,12 +421,12 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
 
         info.authorized = _fromAmount;
         info.deauthorizing = _fromAmount - _toAmount;
-        info.endDeauthorization = block.timestamp + deauthorizationDuration;
+        info.endDeauthorization = uint64(block.timestamp + deauthorizationDuration);
         emit AuthorizationDecreaseRequested(_stakingProvider, _fromAmount, _toAmount);
     }
 
     /**
-    * @notice Approve request of decreasing authorization. Can be called only by anyone
+    * @notice Approve request of decreasing authorization. Can be called by anyone
     * @param _stakingProvider Address of staking provider
     */
     function finishAuthorizationDecrease(address _stakingProvider) external updateReward(_stakingProvider) {
@@ -453,7 +453,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     }
 
     /**
-    * @notice Read authorization from staking contract and store it. Can be called only by anyone
+    * @notice Read authorization from staking contract and store it. Can be called by anyone
     * @param _stakingProvider Address of staking provider
     */
     function resynchronizeAuthorization(address _stakingProvider) external updateReward(_stakingProvider) {
@@ -582,7 +582,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         // If this staker had a operator ...
         if (info.operator != address(0)) {
              require(
-                block.timestamp >= info.operatorStartTimestamp + minOperatorSeconds,
+                block.timestamp >= uint256(info.operatorStartTimestamp) + minOperatorSeconds,
                 "Not enough time passed to change operator"
             );
             // Remove the old relation "operator->stakingProvider"
@@ -609,7 +609,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
 
         // Bond new operator (or unbond if _operator == address(0))
         info.operator = _operator;
-        info.operatorStartTimestamp = block.timestamp;
+        info.operatorStartTimestamp = uint64(block.timestamp);
         info.operatorConfirmed = false;
         emit OperatorBonded(_stakingProvider, _operator, block.timestamp);
     }
