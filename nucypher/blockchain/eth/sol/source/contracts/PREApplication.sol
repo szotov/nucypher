@@ -182,6 +182,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         token = _token;
         tStaking = _tStaking;
         minOperatorSeconds = _minOperatorSeconds;
+        _disableInitializers();
     }
 
     /**

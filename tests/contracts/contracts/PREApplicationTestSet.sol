@@ -199,7 +199,10 @@ contract ExtendedPREApplication is PREApplication {
             _rewardDuration,
             _deauthorizationDuration
         )
+        initializer
     {
+        // TODO add test for initializing through proxy after moving to nucypher-contract repo
+        __Ownable_init();
     }
 
     function testSlash(

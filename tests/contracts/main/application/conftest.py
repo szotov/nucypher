@@ -18,14 +18,11 @@ along with nucypher.  If not, see <https://www.gnu.org/licenses/>.
 
 import pytest
 
-from nucypher.blockchain.eth.token import TToken
-from tests.constants import (
-    TEST_ETH_PROVIDER_URI,
-)
-from tests.utils.ursula import MOCK_URSULA_STARTING_PORT
-from tests.utils.config import make_ursula_test_configuration
 from nucypher.blockchain.eth.registry import InMemoryContractRegistry
-
+from nucypher.blockchain.eth.token import TToken
+from tests.constants import TEST_ETH_PROVIDER_URI
+from tests.utils.config import make_ursula_test_configuration
+from tests.utils.ursula import MOCK_URSULA_STARTING_PORT
 
 TOTAL_SUPPLY = TToken(10_000_000_000, 'T').to_units()
 
@@ -53,8 +50,6 @@ def pre_application(testerchain, token, threshold_staking, deploy_contract, appl
         *application_economics.pre_application_deployment_parameters
     )
 
-    tx = contract.functions.initialize().transact()
-    testerchain.wait_for_receipt(tx)
     tx = threshold_staking.functions.setApplication(contract.address).transact()
     testerchain.wait_for_receipt(tx)
 
