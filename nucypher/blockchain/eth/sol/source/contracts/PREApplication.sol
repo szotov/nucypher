@@ -352,7 +352,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
         require(
             _stakingProviderFromOperator[_stakingProvider] == address(0) ||
-            _stakingProviderFromOperator[_stakingProvider] == info.operator,
+            _stakingProviderFromOperator[_stakingProvider] == _stakingProvider,
             "A provider can't be an operator for another provider"
         );
 
