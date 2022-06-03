@@ -17,10 +17,9 @@ along with nucypher.  If not, see <https://www.gnu.org/licenses/>.
 
 import pytest
 from eth_tester.exceptions import TransactionFailed
-
-from nucypher.blockchain.eth.constants import NULL_ADDRESS
 from eth_utils import to_checksum_address
 
+from nucypher.blockchain.eth.constants import NULL_ADDRESS
 
 REWARDS_SLOT = 6
 REWARDS_PAID_SLOT = 7
@@ -283,9 +282,7 @@ def test_update_reward(testerchain, token, threshold_staking, pre_application, a
     testerchain.time_travel(seconds=reward_duration // 2)
     tx = threshold_staking.functions.authorizationDecreaseRequested(staking_provider_2, 3 * value, 2 * value).transact()
     testerchain.wait_for_receipt(tx)
-    assert pre_application.functions.earned(staking_provider_2).call() == 0
-    assert pre_application.functions.stakingProviderInfo(staking_provider_2).call()[REWARDS_SLOT] == 0
-    assert pre_application.functions.stakingProviderInfo(staking_provider_2).call()[REWARDS_PAID_SLOT] == reward_per_token
+    check_reward_no_confirmation()
 
     # Finish decrease without confirmation
     testerchain.time_travel(seconds=deauthorization_duration)
@@ -334,8 +331,7 @@ def test_update_reward(testerchain, token, threshold_staking, pre_application, a
     testerchain.time_travel(seconds=reward_duration // 2)
     tx = threshold_staking.functions.authorizationDecreaseRequested(staking_provider_2, 3 * value, 2 * value).transact()
     testerchain.wait_for_receipt(tx)
-    assert pre_application.functions.stakingProviderInfo(staking_provider_2).call()[REWARDS_SLOT] == staking_provider_2_reward
-    assert pre_application.functions.stakingProviderInfo(staking_provider_2).call()[REWARDS_PAID_SLOT] == reward_per_token
+    check_reward_with_confirmation()
 
     # Finish decrease with confirmation
     testerchain.time_travel(seconds=deauthorization_duration)

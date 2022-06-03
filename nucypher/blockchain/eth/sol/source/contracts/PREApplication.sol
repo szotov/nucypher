@@ -408,7 +408,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         uint96 _fromAmount,
         uint96 _toAmount
     )
-        external override onlyStakingContract
+        external override onlyStakingContract updateReward(_stakingProvider)
     {
         StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
         require(_toAmount <= info.authorized, "Amount to decrease greater than authorized");
