@@ -132,8 +132,8 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     mapping(address => address) internal _stakingProviderFromOperator;
 
     address public rewardDistributor;
-    uint256 public periodFinish = 0;
-    uint96 public rewardRate = 0;
+    uint256 public periodFinish;
+    uint256 public rewardRateDecimals;
     uint256 public lastUpdateTime;
     uint96 public rewardPerTokenStored;
     uint96 public authorizedOverall;
@@ -265,8 +265,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         }
         uint256 result = rewardPerTokenStored +
                 (lastTimeRewardApplicable() - lastUpdateTime)
-                * rewardRate
-                * 1e18
+                * rewardRateDecimals
                 / authorizedOverall;
         return result.toUint96();
     }
@@ -295,11 +294,11 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         require(msg.sender == rewardDistributor, "Only distributor can push rewards");
         require(_reward > 0, "Reward must be specified");
         if (block.timestamp >= periodFinish) {
-            rewardRate = (_reward / rewardDuration).toUint96();
+            rewardRateDecimals = uint256(_reward) * 1e18 / rewardDuration;
         } else {
             uint256 remaining = periodFinish - block.timestamp;
-            uint256 leftover = remaining * rewardRate;
-            rewardRate = ((_reward + leftover) / rewardDuration).toUint96();
+            uint256 leftover = remaining * rewardRateDecimals;
+            rewardRateDecimals = (uint256(_reward) * 1e18 + leftover) / rewardDuration;
         }
         lastUpdateTime = block.timestamp;
         periodFinish = block.timestamp + rewardDuration;

@@ -23,7 +23,7 @@ from nucypher.blockchain.eth.constants import NULL_ADDRESS
 
 REWARDS_SLOT = 6
 REWARDS_PAID_SLOT = 7
-ERROR = 1e6
+ERROR = 1e5
 
 
 def test_push_reward(testerchain, token, threshold_staking, pre_application, application_economics):
@@ -69,8 +69,11 @@ def test_push_reward(testerchain, token, threshold_staking, pre_application, app
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
     testerchain.wait_for_receipt(tx)
-    timestamp = testerchain.w3.eth.getBlock('latest').timestamp
-    assert pre_application.functions.rewardRate().call() == reward_portion // reward_duration
+    timestamp = testerchain.w3.eth.getBlock("latest").timestamp
+    assert (
+        pre_application.functions.rewardRateDecimals().call()
+        == reward_portion * 10**18 // reward_duration
+    )
     assert pre_application.functions.lastUpdateTime().call() == timestamp
     assert pre_application.functions.periodFinish().call() == timestamp + reward_duration
     assert token.functions.balanceOf(pre_application.address).call() == reward_portion
@@ -89,10 +92,17 @@ def test_push_reward(testerchain, token, threshold_staking, pre_application, app
     testerchain.time_travel(seconds=reward_duration // 2 - 1)
     tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
     testerchain.wait_for_receipt(tx)
-    timestamp = testerchain.w3.eth.getBlock('latest').timestamp
-    expected_reward_rate = (reward_portion + reward_portion // 2) // reward_duration
+    timestamp = testerchain.w3.eth.getBlock("latest").timestamp
+    expected_reward_rate = (
+        (reward_portion + reward_portion // 2) * 10**18 // reward_duration
+    )
     # Could be some error during calculations
-    assert abs(pre_application.functions.rewardRate().call() - expected_reward_rate) <= ERROR
+    assert (
+        abs(
+            pre_application.functions.rewardRateDecimals().call() - expected_reward_rate
+        )
+        <= ERROR
+    )
     assert pre_application.functions.lastUpdateTime().call() == timestamp
     assert pre_application.functions.periodFinish().call() == timestamp + reward_duration
     assert token.functions.balanceOf(pre_application.address).call() == 2 * reward_portion
@@ -118,8 +128,11 @@ def test_push_reward(testerchain, token, threshold_staking, pre_application, app
 
     tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
     testerchain.wait_for_receipt(tx)
-    timestamp = testerchain.w3.eth.getBlock('latest').timestamp
-    assert pre_application.functions.rewardRate().call() == reward_portion // reward_duration
+    timestamp = testerchain.w3.eth.getBlock("latest").timestamp
+    assert (
+        pre_application.functions.rewardRateDecimals().call()
+        == reward_portion * 10**18 // reward_duration
+    )
     assert pre_application.functions.lastUpdateTime().call() == timestamp
     assert pre_application.functions.periodFinish().call() == timestamp + reward_duration
     assert token.functions.balanceOf(pre_application.address).call() == 3 * reward_portion
@@ -156,8 +169,11 @@ def test_push_reward(testerchain, token, threshold_staking, pre_application, app
     testerchain.wait_for_receipt(tx)
     tx = pre_application.functions.pushReward(reward_portion).transact({'from': distributor})
     testerchain.wait_for_receipt(tx)
-    timestamp = testerchain.w3.eth.getBlock('latest').timestamp
-    assert pre_application.functions.rewardRate().call() == reward_portion // reward_duration
+    timestamp = testerchain.w3.eth.getBlock("latest").timestamp
+    assert (
+        pre_application.functions.rewardRateDecimals().call()
+        == reward_portion * 10**18 // reward_duration
+    )
     assert pre_application.functions.lastUpdateTime().call() == timestamp
     assert pre_application.functions.periodFinish().call() == timestamp + reward_duration
     assert token.functions.balanceOf(pre_application.address).call() == 4 * reward_portion
