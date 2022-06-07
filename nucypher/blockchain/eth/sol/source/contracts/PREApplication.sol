@@ -583,6 +583,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         // If this staker had a operator ...
         if (info.operator != address(0)) {
              require(
+                !info.operatorConfirmed ||
                 block.timestamp >= uint256(info.operatorStartTimestamp) + minOperatorSeconds,
                 "Not enough time passed to change operator"
             );

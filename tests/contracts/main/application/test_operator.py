@@ -17,9 +17,9 @@ along with nucypher.  If not, see <https://www.gnu.org/licenses/>.
 
 import pytest
 from eth_tester.exceptions import TransactionFailed
+from eth_utils import to_checksum_address
 
 from nucypher.blockchain.eth.constants import NULL_ADDRESS
-from eth_utils import to_checksum_address
 
 CONFIRMATION_SLOT = 1
 
@@ -325,6 +325,37 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     all_locked, staking_providers = pre_application.functions.getActiveStakingProviders(1, 0).call()
     assert all_locked == 0
     assert len(staking_providers) == 0
+
+    # Unbond and rebond oeprator
+    tx = pre_application.functions.bondOperator(
+        staking_provider_3, NULL_ADDRESS
+    ).transact({"from": staking_provider_3})
+    testerchain.wait_for_receipt(tx)
+    tx = pre_application.functions.bondOperator(staking_provider_3, operator2).transact(
+        {"from": staking_provider_3}
+    )
+    testerchain.wait_for_receipt(tx)
+    assert not pre_application.functions.isOperatorConfirmed(operator2).call()
+
+    # Operator can be unbonded before confirmation without restriction
+    tx = pre_application.functions.bondOperator(
+        staking_provider_3, NULL_ADDRESS
+    ).transact({"from": staking_provider_3})
+    testerchain.wait_for_receipt(tx)
+    assert (
+        pre_application.functions.getOperatorFromStakingProvider(
+            staking_provider_3
+        ).call()
+        == NULL_ADDRESS
+    )
+    assert (
+        pre_application.functions.stakingProviderFromOperator(staking_provider_3).call()
+        == NULL_ADDRESS
+    )
+    assert (
+        pre_application.functions.stakingProviderFromOperator(operator2).call()
+        == NULL_ADDRESS
+    )
 
 
 def test_confirm_address(testerchain, threshold_staking, pre_application, application_economics, deploy_contract):
