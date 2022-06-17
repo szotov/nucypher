@@ -110,6 +110,7 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     event_args = events[-1]['args']
     assert event_args['stakingProvider'] == staking_provider_3
     assert event_args['operator'] == operator1
+    assert event_args['previousOperator'] == NULL_ADDRESS
     assert event_args['startTimestamp'] == timestamp
 
     # After confirmation operator is becoming active
@@ -169,6 +170,7 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     assert event_args['stakingProvider'] == staking_provider_3
     # Now the operator has been unbonded ...
     assert event_args['operator'] == NULL_ADDRESS
+    assert event_args['previousOperator'] == operator1
     # ... with a new starting period.
     assert event_args['startTimestamp'] == timestamp
 
@@ -189,6 +191,7 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     event_args = events[-1]['args']
     assert event_args['stakingProvider'] == staking_provider_3
     assert event_args['operator'] == operator2
+    assert event_args['previousOperator'] == NULL_ADDRESS
     assert event_args['startTimestamp'] == timestamp
 
     # Now the previous operator can no longer make a confirmation
@@ -221,6 +224,7 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     event_args = events[-1]['args']
     assert event_args['stakingProvider'] == staking_provider_4
     assert event_args['operator'] == operator1
+    assert event_args['previousOperator'] == NULL_ADDRESS
     assert event_args['startTimestamp'] == timestamp
 
     # The first operator still can't be a staking provider
@@ -264,6 +268,7 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     event_args = events[-1]['args']
     assert event_args['stakingProvider'] == staking_provider_4
     assert event_args['operator'] == operator3
+    assert event_args['previousOperator'] == operator1
     assert event_args['startTimestamp'] == timestamp
 
     # The first operator is free and can deposit tokens and become a staking provider
@@ -299,6 +304,7 @@ def test_bond_operator(testerchain, threshold_staking, pre_application, applicat
     event_args = events[-1]['args']
     assert event_args['stakingProvider'] == staking_provider_1
     assert event_args['operator'] == staking_provider_1
+    assert event_args['previousOperator'] == NULL_ADDRESS
     assert event_args['startTimestamp'] == timestamp
 
     # If stake will be less than minimum then confirmation is still possible

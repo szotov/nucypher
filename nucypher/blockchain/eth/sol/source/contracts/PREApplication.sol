@@ -95,9 +95,15 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
     * @notice Signals that an operator was bonded to the staking provider
     * @param stakingProvider Staking provider address
     * @param operator Operator address
+    * @param previousOperator Previous operator address
     * @param startTimestamp Timestamp bonding occurred
     */
-    event OperatorBonded(address indexed stakingProvider, address indexed operator, uint256 startTimestamp);
+    event OperatorBonded(
+        address indexed stakingProvider,
+        address indexed operator,
+        address indexed previousOperator,
+        uint256 startTimestamp
+    );
 
     /**
     * @notice Signals that an operator address is confirmed
@@ -578,16 +584,17 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         external onlyOwnerOrStakingProvider(_stakingProvider) updateReward(_stakingProvider)
     {
         StakingProviderInfo storage info = stakingProviderInfo[_stakingProvider];
-        require(_operator != info.operator, "Specified operator is already bonded with this provider");
+        address previousOperator = info.operator;
+        require(_operator != previousOperator, "Specified operator is already bonded with this provider");
         // If this staker had a operator ...
-        if (info.operator != address(0)) {
-             require(
+        if (previousOperator != address(0)) {
+            require(
                 !info.operatorConfirmed ||
                 block.timestamp >= uint256(info.operatorStartTimestamp) + minOperatorSeconds,
                 "Not enough time passed to change operator"
             );
             // Remove the old relation "operator->stakingProvider"
-            _stakingProviderFromOperator[info.operator] = address(0);
+            _stakingProviderFromOperator[previousOperator] = address(0);
         }
 
         if (_operator != address(0)) {
@@ -612,7 +619,7 @@ contract PREApplication is IApplication, Adjudicator, OwnableUpgradeable {
         info.operator = _operator;
         info.operatorStartTimestamp = uint64(block.timestamp);
         info.operatorConfirmed = false;
-        emit OperatorBonded(_stakingProvider, _operator, block.timestamp);
+        emit OperatorBonded(_stakingProvider, _operator, previousOperator, block.timestamp);
     }
 
     /**
